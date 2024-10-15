@@ -406,7 +406,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         is_causal = []
         
         with torch.no_grad():
-            for batch_id, batch in enumerate(test_loader):
+            for batch_id, batch in tqdm(
+                enumerate(test_loader), desc="Evaluating", total=len(test_loader)
+            ):
                 
                 if inference_mode == "groundtruth":
                     intervention_weight = torch.zeros(len(batch["editor_input_ids"]), batch["source_input_ids"].shape[1] + 1, batch["base_input_ids"].shape[1]).to("cuda")

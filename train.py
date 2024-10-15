@@ -76,7 +76,7 @@ def run_experiment(
                 "das_dimension": das_dimension,
             },
         )
-        
+
     if "default" in inference_modes:
         inference_modes.remove("default")
         inference_modes.append(None)
@@ -93,14 +93,15 @@ def run_experiment(
     
     # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
     # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
-                
+
     collate_fn = get_ravel_collate_fn(
         tokenizer, 
         source_suffix_visibility=source_suffix_visibility, 
         base_suffix_visibility=base_suffix_visibility, 
-        add_space_before_target=True
+        add_space_before_target=True,
+        contain_entity_position="groundtruth" in inference_modes
     )
-    
+ 
     data_loader = DataLoader(
         train_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
@@ -167,8 +168,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
-    
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test_small")
+ 
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
     parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
