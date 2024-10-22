@@ -25,6 +25,7 @@ def run_experiment(
     wandb_project="hypernetworks-interpretor",
     wandb_run_name=None,
     inference_modes=["default", "bidding_argmax"],
+    debug_model=False,
     intervention_layer=15,
     subspace_module="ReflectSelect",
     model_name_or_path="./models/llama3-8b",
@@ -59,7 +60,8 @@ def run_experiment(
     """if save_dir is not None:
         save_dir = os.path.join("./models", save_dir)"""
         
-    
+    if debug_model:
+        inference_modes = ["groundtruth"]
         
     if log_wandb:
         wandb.init(
@@ -96,6 +98,7 @@ def run_experiment(
                 
     collate_fn = get_ravel_collate_fn(
         tokenizer, 
+        contain_entity_position=True,
         source_suffix_visibility=source_suffix_visibility, 
         base_suffix_visibility=base_suffix_visibility, 
         add_space_before_target=True
@@ -133,6 +136,7 @@ def run_experiment(
         train_loader=data_loader,
         test_loader=test_data_loader,
         inference_modes=inference_modes,
+        debug_model=debug_model,
         epochs=n_epochs,
         checkpoint_per_steps = checkpoint_per_steps,
         eval_per_steps = eval_per_steps,
@@ -162,38 +166,41 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=2)
-    parser.add_argument("--model_name_or_path", type=str, default="/scr-ssd/sjd24/llama3-8b")
+    parser.add_argument("--n_epochs", type=int, default=5)
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test_small")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
     
-    parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.25)
+    parser.add_argument("--sparsity_loss_type", type=str, default="entropy", choices=["entropy", "l1"])
+    parser.add_argument("--source_selection_sparsity_loss", type=bool, default=False)
+    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.15)
     parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.0)
-    parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.0)
+    parser.add_argument("--sparsity_loss_weight_end", type=float, default=0.0)
     
     parser.add_argument("--target_intervention_num", type=int, default=None)    
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=1)
     
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/city_entropy_1014")
+    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/occupation_duty_1020")
     parser.add_argument("--save_model", default=False, action="store_true")
         
+    
+    parser.add_argument('--debug_model', type=bool, default=True)
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
     # Ablation
-    parser.add_argument("--num_decoders", type=int, default=8)
+    parser.add_argument("--num_decoders", type=int, default=2)
     parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
     parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
     parser.add_argument("--break_asymmetric", default=False, action="store_true")
     
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
+    parser.add_argument('--subspace_module', default="DAS", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)

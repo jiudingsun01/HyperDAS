@@ -533,6 +533,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         train_loader,
         test_loader=None,
         inference_modes=[None],
+        debug_model=False,
         epochs=1,
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
@@ -555,7 +556,19 @@ class RavelInterpretorHypernetwork(nn.Module):
             
         trainable_parameters = []
         for name, param in self.named_parameters():
-            if "target_model" not in name:
+            
+            if not debug_model:
+                if "target_model" not in name:
+                    if "das_module" in name:
+                        if "rotate_layer" in name:
+                            trainable_parameters += [{"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}]
+                        elif "mask_projection" in name:
+                            trainable_parameters += [{"params": param, "lr": self.boundary_lr}]
+                        else:
+                            trainable_parameters += [{"params": param}]
+                    else:
+                        trainable_parameters += [{"params": param}]
+            else:
                 if "das_module" in name:
                     if "rotate_layer" in name:
                         trainable_parameters += [{"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}]
@@ -563,8 +576,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                         trainable_parameters += [{"params": param, "lr": self.boundary_lr}]
                     else:
                         trainable_parameters += [{"params": param}]
-                else:
-                    trainable_parameters += [{"params": param}]
         
         self.opt = optim.AdamW(trainable_parameters, lr=lr, weight_decay=weight_decay)  # usually: lr = 5e-5. 1e-3 worked well!
         
@@ -638,21 +649,47 @@ class RavelInterpretorHypernetwork(nn.Module):
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
                     
-                    prediction = self.forward(
-                        editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                        base_input_ids=batch["base_input_ids"].to("cuda"),
-                        base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                        base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                        source_input_ids=batch["source_input_ids"].to("cuda"),
-                        source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                        source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
-                        labels=batch["labels"].to("cuda"),
-                        is_causal=batch["is_causal"].to("cuda"),
-                        causal_loss_weight=causal_loss_weight,
-                        iso_loss_weight=iso_loss_weight,
-                        output_intervention_weight=True,
-                        inference_mode=None
-                    )
+                    if not debug_model:
+                        prediction = self.forward(
+                            editor_input_ids=batch["editor_input_ids"].to("cuda"),
+                            base_input_ids=batch["base_input_ids"].to("cuda"),
+                            base_attention_mask=batch["base_attention_mask"].to("cuda"),
+                            base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
+                            source_input_ids=batch["source_input_ids"].to("cuda"),
+                            source_attention_mask=batch["source_attention_mask"].to("cuda"),
+                            source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
+                            labels=batch["labels"].to("cuda"),
+                            is_causal=batch["is_causal"].to("cuda"),
+                            causal_loss_weight=causal_loss_weight,
+                            iso_loss_weight=iso_loss_weight,
+                            output_intervention_weight=True,
+                            inference_mode=None
+                        )
+                    else:
+                        
+                        intervention_weight = torch.zeros(len(batch["editor_input_ids"]), batch["source_input_ids"].shape[1] + 1, batch["base_input_ids"].shape[1]).to("cuda")
+                        intervention_weight[:, -1, :] = 1.0
+                        
+                        for i in range(len(batch["base_entity_position_ids"])):
+                            intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
+                            intervention_weight[i, batch["source_entity_position_ids"][i], batch["base_entity_position_ids"][i]] = 1.0
+                            
+                        prediction = self.forward(
+                            editor_input_ids=batch["editor_input_ids"].to("cuda"),
+                            base_input_ids=batch["base_input_ids"].to("cuda"),
+                            base_attention_mask=batch["base_attention_mask"].to("cuda"),
+                            base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
+                            source_input_ids=batch["source_input_ids"].to("cuda"),
+                            source_attention_mask=batch["source_attention_mask"].to("cuda"),
+                            source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
+                            labels=batch["labels"].to("cuda"),
+                            is_causal=batch["is_causal"].to("cuda"),
+                            causal_loss_weight=causal_loss_weight,
+                            iso_loss_weight=iso_loss_weight,
+                            output_intervention_weight=True,
+                            intervention_weight=intervention_weight,
+                            inference_mode="groundtruth"
+                        )
                     
                     training_loss = 0
                     
@@ -694,8 +731,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                     metrics = {
                         "step": cur_steps,
                         "train_batch_prediction_loss": prediction_loss.item(),
-                        "train_batch_sparsity_loss": source_selection_sparsity_loss.item(),
                     }
+                    
+                    if apply_source_selection_sparsity_loss:
+                        metrics["train_batch_sparsity_loss"] = source_selection_sparsity_loss.item()
+                        
                     if target_intervention_num is not None:
                         metrics["train_batch_#intervention_loss"] = intervention_number_loss.item()
                     

@@ -428,7 +428,7 @@ class LlamaInterpretor(nn.Module):
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size, 
                     dict_size=self.target_model.config.hidden_size,
-                    top_k_parameter=128,
+                    top_k_parameter=das_dimension,
                     lambda_parameter=10,
                     return_penalty=True,
                     torch_dtype=config.torch_dtype
