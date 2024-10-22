@@ -78,7 +78,7 @@ def run_experiment(
                 "das_dimension": das_dimension,
             },
         )
-        
+
     if "default" in inference_modes:
         inference_modes.remove("default")
         inference_modes.append(None)
@@ -95,15 +95,16 @@ def run_experiment(
     
     # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
     # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
-                
+
     collate_fn = get_ravel_collate_fn(
         tokenizer, 
         contain_entity_position=True,
         source_suffix_visibility=source_suffix_visibility, 
         base_suffix_visibility=base_suffix_visibility, 
-        add_space_before_target=True
+        add_space_before_target=True,
+        contain_entity_position="groundtruth" in inference_modes
     )
-    
+ 
     data_loader = DataLoader(
         train_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )

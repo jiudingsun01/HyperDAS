@@ -12,3 +12,7 @@ data/
 *.out
 
 scripts/
+
+.env
+outputs/
+assets/
