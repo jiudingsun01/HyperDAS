@@ -30,6 +30,7 @@ def run_experiment(
     subspace_module="ReflectSelect",
     model_name_or_path="./models/llama3-8b",
     load_trained_from=None,
+    sparsity_loss_type="entropy",
     batch_size=8,
     source_suffix_visibility=False,
     base_suffix_visibility=False,
@@ -102,7 +103,6 @@ def run_experiment(
         source_suffix_visibility=source_suffix_visibility, 
         base_suffix_visibility=base_suffix_visibility, 
         add_space_before_target=True,
-        contain_entity_position="groundtruth" in inference_modes
     )
  
     data_loader = DataLoader(
@@ -151,7 +151,8 @@ def run_experiment(
         weight_decay=weight_decay, 
         lr=lr,
         save_model=save_model,
-        target_intervention_num=target_intervention_num
+        target_intervention_num=target_intervention_num,
+        sparsity_loss_type=sparsity_loss_type,
     )
 
     if log_wandb:
@@ -173,24 +174,23 @@ if __name__ == "__main__":
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/occupation_duty_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/occupation_duty_train")
     
-    parser.add_argument("--sparsity_loss_type", type=str, default="entropy", choices=["entropy", "l1"])
-    parser.add_argument("--source_selection_sparsity_loss", type=bool, default=False)
+    parser.add_argument("--sparsity_loss_type", type=str, default="l1", choices=["entropy", "l1", "threshold"])
+    parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.15)
-    parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.0)
-    parser.add_argument("--sparsity_loss_weight_end", type=float, default=0.0)
+    parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.1)
+    parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.5)
     
     parser.add_argument("--target_intervention_num", type=int, default=None)    
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=1)
     
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/occupation_duty_1020")
+    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/city_debug")
     parser.add_argument("--save_model", default=False, action="store_true")
-        
     
-    parser.add_argument('--debug_model', type=bool, default=True)
+    parser.add_argument('--debug_model', type=bool, default=False)
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
     # Ablation
@@ -201,11 +201,11 @@ if __name__ == "__main__":
     parser.add_argument("--break_asymmetric", default=False, action="store_true")
     
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="DAS", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
+    parser.add_argument('--subspace_module', default=None, choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=2000)
+    parser.add_argument("--eval_per_steps", type=int, default=200)
     parser.add_argument("--checkpoint_per_steps", type=int, default=2000)
     
     args = parser.parse_args()

@@ -551,6 +551,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         save_model=False,
         schedule_sparsity_loss=True,
         target_intervention_num=None,
+        sparsity_loss_type="entropy",
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
@@ -559,18 +560,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         trainable_parameters = []
         for name, param in self.named_parameters():
             
-            if not debug_model:
-                if "target_model" not in name:
-                    if "das_module" in name:
-                        if "rotate_layer" in name:
-                            trainable_parameters += [{"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}]
-                        elif "mask_projection" in name:
-                            trainable_parameters += [{"params": param, "lr": self.boundary_lr}]
-                        else:
-                            trainable_parameters += [{"params": param}]
-                    else:
-                        trainable_parameters += [{"params": param}]
-            else:
+            if "target_model" not in name:
                 if "das_module" in name:
                     if "rotate_layer" in name:
                         trainable_parameters += [{"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}]
@@ -578,6 +568,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         trainable_parameters += [{"params": param, "lr": self.boundary_lr}]
                     else:
                         trainable_parameters += [{"params": param}]
+                else:
+                    trainable_parameters += [{"params": param}]
         
         self.opt = optim.AdamW(trainable_parameters, lr=lr, weight_decay=weight_decay)  # usually: lr = 5e-5. 1e-3 worked well!
         
@@ -700,11 +692,31 @@ class RavelInterpretorHypernetwork(nn.Module):
                                         
                     if apply_source_selection_sparsity_loss:
                         
-                        source_selection_sparsity_loss = self._intervention_entropy(prediction.intervention_weight)
-                                                
-                        step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                        training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
-                    
+                        if sparsity_loss_type == "entropy":
+                        
+                            source_selection_sparsity_loss = self._intervention_entropy(prediction.intervention_weight)
+                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
+                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                        
+                        elif sparsity_loss_type == "l1":
+                            
+                            source_selection_sparsity_loss = torch.sum(prediction.intervention_weight)
+                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
+                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                            
+                        elif sparsity_loss_type == "threshold":
+                            
+                            source_selection_sum = prediction.intervention_weight[:, :-1, :].sum(dim=-1)
+                            source_selection_loss = torch.where(
+                                source_selection_sum > 1.0,
+                                source_selection_sum,
+                                torch.zeros_like(source_selection_sum)
+                            ).sum(dim=-1)
+                            source_selection_sparsity_loss = source_selection_loss.mean()
+                            
+                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
+                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                        
                     if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
                         penalty = self.interpretor.get_penalty()
                         training_loss += penalty

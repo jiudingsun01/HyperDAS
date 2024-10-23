@@ -459,6 +459,7 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
     def forward(self, base, source, subspaces=None):
         rotated_base = self.rotate_layer(base)
         rotated_source = self.rotate_layer(source)
+        
         if subspaces is not None:
             if self.use_fast or _can_use_fast(subspaces):
                 if self.subspace_partition is None:

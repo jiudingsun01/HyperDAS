@@ -90,6 +90,7 @@ def run_experiment(
     
     model = model.cuda()
     
+    
     model.run_train(
         train_loader=data_loader,
         test_loader=test_data_loader,
@@ -100,6 +101,15 @@ def run_experiment(
         causal_loss_weight=causal_loss_weight,
         lr=lr
     )
+    
+    acc = model.eval_accuracy(test_data_loader)
+    
+    for key, value in acc.items():
+        print(f"{key}: {value}")
+        
+    if save_dir is not None:
+        with open(os.path.join(save_dir), "w") as f:
+            json.dump(acc, f)
 
     if log_wandb:
         wandb.finish()
