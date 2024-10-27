@@ -700,7 +700,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         
                         elif sparsity_loss_type == "l1":
                             
-                            source_selection_sparsity_loss = torch.sum(prediction.intervention_weight)
+                            source_selection_sparsity_loss = torch.sum(prediction.intervention_weight[:, :-1, :]) / prediction.intervention_weight[:, :-1, :].numel()
                             step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
                             training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
                             
