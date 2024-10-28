@@ -160,17 +160,17 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=2)
+    parser.add_argument("--n_epochs", type=int, default=5)
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test_small")
     parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.05)
+    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.5)
     parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.15)
     parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.5)
     
@@ -192,11 +192,16 @@ if __name__ == "__main__":
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
     parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--eval_per_steps", type=int, default=2000)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()
     args = dict(args.__dict__)
+    
+    if not os.path.exists(args["save_dir"]):
+        os.makedirs(args["save_dir"])
+        
+    json.dump(args, open(os.path.join(args["save_dir"], "config.json"), "w"))
     run_experiment(**args)
