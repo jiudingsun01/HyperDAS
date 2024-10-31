@@ -124,82 +124,49 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
+        all_base_hidden_states = () if output_hidden_states else None
+        all_source_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
         for decoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
+                all_base_hidden_states += (base_hidden_states,)
+                all_source_hidden_states += (source_hidden_states,)
 
             if self.gradient_checkpointing and self.training:
                 
-                if isinstance(decoder_layer, LlamaDecoderLayerWithDoubleCrossAttention):
-                    layer_outputs = self._gradient_checkpointing_func(
-                        decoder_layer.__call__,
-                        hidden_states,
-                        causal_mask,
-                        source_hidden_states,
-                        source_attention_mask,
-                        base_hidden_states,
-                        base_attention_mask,
-                        position_ids,
-                        past_key_values,
-                        output_attentions,
-                        use_cache,
-                        cache_position,
-                    )
-                else:
-                    layer_outputs = self._gradient_checkpointing_func(
-                        decoder_layer.__call__,
-                        hidden_states,
-                        causal_mask,
-                        position_ids,
-                        past_key_values,
-                        output_attentions,
-                        use_cache,
-                        cache_position,
-                    )
+                layer_outputs = self._gradient_checkpointing_func(
+                    decoder_layer.__call__,
+                    hidden_states,
+                    causal_mask,
+                    source_hidden_states,
+                    source_attention_mask,
+                    base_hidden_states,
+                    base_attention_mask,
+                    position_ids,
+                    past_key_values,
+                    output_attentions,
+                    use_cache,
+                    cache_position,
+                )
             else:
-                if isinstance(decoder_layer, LlamaDecoderLayerWithDoubleCrossAttention):
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        source_hidden_states=source_hidden_states,
-                        source_attention_mask=source_attention_mask,
-                        base_hidden_states=base_hidden_states,
-                        base_attention_mask=base_attention_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                else:
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        source_hidden_states=source_hidden_states,
-                        source_attention_mask=source_attention_mask,
-                        base_hidden_states=base_hidden_states,
-                        base_attention_mask=base_attention_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                    """
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                    """
-            hidden_states = layer_outputs[0]
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    source_hidden_states=source_hidden_states,
+                    source_attention_mask=source_attention_mask,
+                    base_hidden_states=base_hidden_states,
+                    base_attention_mask=base_attention_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_values,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                )
+                
+            hidden_states, base_hidden_states, source_hidden_states = layer_outputs[0]
 
             if use_cache:
                 next_decoder_cache = layer_outputs[2 if output_attentions else 1]
@@ -208,6 +175,8 @@ class LlamaModelWithCrossAttention(LlamaModel):
                 all_self_attns += (layer_outputs[1],)
 
         hidden_states = self.norm(hidden_states)
+        source_hidden_states = self.norm(source_hidden_states)
+        base_hidden_states = self.norm(base_hidden_states)
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
@@ -517,15 +486,10 @@ class LlamaInterpretor(nn.Module):
         source_hidden_states: torch.Tensor = None,
         source_position_ids: torch.Tensor = None,
         intervention_layer: int = None,
-        output_vanilla_hidden_states: bool = True,
-        output_edited_hidden_states: bool = False,
         output_intervention_weight: bool = True,
-        intervention_weight: torch.Tensor = None,
-        inference_mode: str = None,
-    ) -> InterpretorModelOutput:
-        
-        assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
-        
+        source_intervention_weight: torch.Tensor = None,
+        base_intervention_weight: torch.Tensor = None,
+    ) -> InterpretorModelOutput:        
                 
         if intervention_layer is None:
             intervention_layer = self.config.intervention_layer 
@@ -576,79 +540,49 @@ class LlamaInterpretor(nn.Module):
         source_normalization_factors = source_hidden_states.norm(dim=-1, keepdim=True)
         source_hidden_states = source_hidden_states / source_normalization_factors
 
-        if intervention_weight is None or inference_mode == "groundtruth":
             
-            n_layer = base_hidden_states.shape[2]
-                        
-            collapsed_base_hidden_states = base_hidden_states.reshape(
-                base_hidden_states.shape[0],
-                base_hidden_states.shape[1] * base_hidden_states.shape[2],
-                base_hidden_states.shape[3],
-            )
-            
-            collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
-            collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
-                base_intervention_mask.shape[0],
-                base_intervention_mask.shape[1] * n_layer,
-            )
-            
-            collapsed_source_hidden_states = source_hidden_states.reshape(
-                source_hidden_states.shape[0],
-                source_hidden_states.shape[1] * source_hidden_states.shape[2],
-                source_hidden_states.shape[3],
-            )
-            
-            collapsed_source_attention_mask = source_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
-            collapsed_source_attention_mask = collapsed_source_attention_mask.reshape(
-                source_intervention_mask.shape[0],
-                source_intervention_mask.shape[1] * n_layer,
-            )
+        n_layer = base_hidden_states.shape[2]
+                    
+        collapsed_base_hidden_states = base_hidden_states.reshape(
+            base_hidden_states.shape[0],
+            base_hidden_states.shape[1] * base_hidden_states.shape[2],
+            base_hidden_states.shape[3],
+        )
+        
+        collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
+        collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
+            base_intervention_mask.shape[0],
+            base_intervention_mask.shape[1] * n_layer,
+        )
+        
+        collapsed_source_hidden_states = source_hidden_states.reshape(
+            source_hidden_states.shape[0],
+            source_hidden_states.shape[1] * source_hidden_states.shape[2],
+            source_hidden_states.shape[3],
+        )
+        
+        collapsed_source_attention_mask = source_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
+        collapsed_source_attention_mask = collapsed_source_attention_mask.reshape(
+            source_intervention_mask.shape[0],
+            source_intervention_mask.shape[1] * n_layer,
+        )
 
-            interpretor_output = self.hypernetwork(
-                input_ids=editor_input_ids,
-                attention_mask=editor_attention_mask,
-                base_hidden_states=collapsed_base_hidden_states,
-                base_attention_mask=collapsed_base_attention_mask,
-                source_hidden_states=collapsed_source_hidden_states,
-                source_attention_mask=collapsed_source_attention_mask,
-                use_cache=False
-            )
+        interpretor_output = self.hypernetwork(
+            input_ids=editor_input_ids,
+            attention_mask=editor_attention_mask,
+            base_hidden_states=collapsed_base_hidden_states,
+            base_attention_mask=collapsed_base_attention_mask,
+            source_hidden_states=collapsed_source_hidden_states,
+            source_attention_mask=collapsed_source_attention_mask,
+            use_cache=False
+        )
             
-            if inference_mode == "groundtruth":
-                hypernet_hidden_states, _ = interpretor_output
-                intervention_weight = intervention_weight.to(dtype=hypernet_hidden_states.dtype)
-            else:
-                # Multiply the outputs by normalization factors
-                hypernet_hidden_states, intervention_weight = interpretor_output
-                intervention_weight = intervention_weight.squeeze()
             
-        if inference_mode == "global_argmax":
-            batch_size, _, num_base_pos = intervention_weight.shape
-            source_base_intervention_flatten = intervention_weight[:, :-1, :].view(batch_size, -1)
-            max_intervention_position = torch.argmax(source_base_intervention_flatten, dim=1)
-            intervention_weight = torch.zeros_like(intervention_weight)
-            intervention_weight[:, -1, :] = 1.0
-            for i in range(batch_size):
-                source_token_idx = max_intervention_position[i] // num_base_pos
-                base_token_idx = max_intervention_position[i] % num_base_pos
-                intervention_weight[i, source_token_idx, base_token_idx] = 1.0
-                intervention_weight[i, -1, base_token_idx] = 0.0
-        elif inference_mode == "column_argmax":
-            batch_size, num_src_pos, num_base_pos = intervention_weight.shape
-            intervention_weight = torch.argmax(intervention_weight, dim=1)
-            intervention_weight = torch.nn.functional.one_hot(intervention_weight, num_classes=num_src_pos).to(dtype=intervention_weight.dtype).permute(0, 2, 1)            
-        elif inference_mode == "bidding_argmax":
-            batch_size, num_src_pos, num_base_pos = intervention_weight.shape
-            bidding_weight = torch.argmax(intervention_weight[:, :-1, :], dim=-1)
-            bidding_weight = torch.nn.functional.one_hot(bidding_weight, num_classes=num_base_pos).float()
-            bidding_weight = torch.cat([bidding_weight, torch.ones(batch_size, 1, num_base_pos).to(bidding_weight.device)], dim=1)
-            intervention_weight = torch.where(bidding_weight == 1, intervention_weight, torch.zeros_like(intervention_weight))
-            if self.bidding_threshold is not None:
-                threshold = torch.Tensor([self.bidding_threshold]).to(intervention_weight.device)
-                threshold = threshold.repeat(batch_size, num_base_pos)
-                intervention_weight[:, -1, :] = torch.where(intervention_weight[:, -1, :] > self.bidding_threshold, intervention_weight[:, -1, :], threshold)
-            intervention_weight = torch.argmax(intervention_weight, dim=1)
-            intervention_weight = torch.nn.functional.one_hot(intervention_weight, num_classes=num_src_pos).to(dtype=intervention_weight.dtype).permute(0, 2, 1)
+        # Multiply the outputs by normalization factors
+        hypernet_hidden_states, source_intervention_weight, base_intervention_weight = interpretor_output
+        intervention_weight = intervention_weight.squeeze()
+            
+        raise NotImplementedError("This part is not implemented yet")
     
 
         if len(intervention_weight.shape) == 2:

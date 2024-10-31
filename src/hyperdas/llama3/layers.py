@@ -172,17 +172,9 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         
-        self.ablate_base_token_attention = config.ablate_base_token_attention
-        self.ablate_source_token_attention = config.ablate_source_token_attention
+        self.cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
+        self.cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         
-        if not self.ablate_source_token_attention:
-            self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-            self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        
-        if not self.ablate_base_token_attention:
-            self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-            self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
 
     def forward(
         self,
@@ -388,10 +380,6 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
     def __init__(self, config, layer_idx=None):
         super().__init__(config, layer_idx, True)
         self.intervention_layer = config.intervention_layer
-        self.q_combine = nn.Linear(self.hidden_size * 2, self.hidden_size, bias=False)
-        nn.init.uniform_(self.q_combine.weight)
-        
-        self.break_asymmetric = config.break_asymmetric
         
     def _update_encoder_attention_mask(self, attention_mask, attn_weights):
         attention_mask = attention_mask.unsqueeze(1)
@@ -406,75 +394,35 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
         attention_mask: Optional[torch.FloatTensor] = None,
-        base_encoder_hidden_states: Optional[torch.Tensor] = None,
-        base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        source_encoder_hidden_states: Optional[torch.Tensor] = None,
-        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        if base_encoder_hidden_states is not None or source_encoder_hidden_states is not None:
-            if not hasattr(self, "q_combine"):
-                raise ValueError(
-                    "If class is used as cross attention, the weights `q_attn` have to be defined. "
-                    "Please make sure to instantiate class with `GPT2Attention(..., is_cross_attention=True)`."
-                )
-        else:
-            raise ValueError("This class is only meant to be used as cross attention")
-            # query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
         
         n_layers = self.config.num_hidden_layers + 1
-        base_n_tokens = base_encoder_attention_mask.shape[-1] // n_layers
-        source_n_tokens = source_encoder_attention_mask.shape[-1] // n_layers
+        n_tokens = encoder_attention_mask.shape[-1] // n_layers
         
-        base_start, base_end = (
-            self.intervention_layer * base_n_tokens,
-            (self.intervention_layer + 1) * base_n_tokens   
-        )
+        batch_size = encoder_attention_mask.shape[0]
+        encoder_attention_mask = encoder_attention_mask.reshape(batch_size, n_tokens, n_layers)[:, :, self.intervention_layer]
+        encoder_hidden_states = encoder_hidden_states.reshape(batch_size, n_tokens, n_layers, -1)[:, :, self.intervention_layer, :]
         
-        source_start, source_end = (
-            self.intervention_layer * source_n_tokens,
-            (self.intervention_layer + 1) * source_n_tokens
-        )
+        print(encoder_hidden_states.shape, encoder_attention_mask.shape)
+        print(hidden_states.shape, attention_mask.shape)
         
-        batch_size = base_encoder_attention_mask.shape[0]
-        base_encoder_attention_mask = base_encoder_attention_mask.reshape(batch_size, base_n_tokens, n_layers)[:, :, self.intervention_layer]
-        base_encoder_hidden_states = base_encoder_hidden_states.reshape(batch_size, base_n_tokens, n_layers, -1)[:, :, self.intervention_layer, :]
-        source_encoder_attention_mask = source_encoder_attention_mask.reshape(batch_size, source_n_tokens, n_layers)[:, :, self.intervention_layer]
-        source_encoder_hidden_states = source_encoder_hidden_states.reshape(batch_size, source_n_tokens, n_layers, -1)[:, :, self.intervention_layer, :]
-        
-        expanded_base_encoder_hidden_states = base_encoder_hidden_states.unsqueeze(1).expand(-1, source_n_tokens, -1, -1)
-        expanded_source_encoder_hidden_states = source_encoder_hidden_states.unsqueeze(2).expand(-1, -1, base_n_tokens, -1)
-        
-        if self.break_asymmetric:
-            # Flip a coin to decide base_encoder_hidden_states goes first or source_encoder_hidden_states goes first
-            
-            coin_flip = torch.randint(0, 2, (1,)).item()
-            if coin_flip:
-                encoder_hidden_states = torch.concat([expanded_source_encoder_hidden_states, expanded_base_encoder_hidden_states], dim=-1)
-            else:
-                encoder_hidden_states = torch.concat([expanded_base_encoder_hidden_states, expanded_source_encoder_hidden_states], dim=-1)
-        else:
-            encoder_hidden_states = torch.concat([expanded_base_encoder_hidden_states, expanded_source_encoder_hidden_states], dim=-1)
-        encoder_hidden_states = self.q_combine(encoder_hidden_states)
-        encoder_hidden_states = torch.concat([encoder_hidden_states, base_encoder_hidden_states.unsqueeze(1)], dim=1)
-
-        encoder_attention_mask = torch.einsum("bq,bs->bsq", base_encoder_attention_mask, source_encoder_attention_mask)
-        encoder_attention_mask = torch.concat([encoder_attention_mask, torch.ones_like(base_encoder_attention_mask).unsqueeze(1)], dim=1)
-        
-        batch_size, _, _ = encoder_attention_mask.shape
+        raise NotImplementedError
         
         encoder_hidden_states = encoder_hidden_states.reshape(
             batch_size, 
-            (source_n_tokens + 1) * base_n_tokens,
+            n_tokens,
             -1
         )
         
         encoder_attention_mask = encoder_attention_mask.reshape(
             batch_size,
-            (source_n_tokens + 1) * base_n_tokens
+            n_tokens
         )
         
         bsz, q_len, _ = hidden_states.size()

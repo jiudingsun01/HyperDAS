@@ -27,9 +27,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         torch_dtype=torch.bfloat16,
         das_dimension=None,
         initialize_from_scratch=False,
-        ablate_base_token_attention=False,
-        ablate_source_token_attention=False,
-        break_asymmetric=False,
     ):
         super().__init__()
 
@@ -41,9 +38,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.intervention_layer = intervention_layer
         self.interpretor_config._attn_implementation = 'eager'
         self.interpretor_config.initialize_from_scratch = initialize_from_scratch
-        self.interpretor_config.ablate_base_token_attention = ablate_base_token_attention
-        self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
-        self.interpretor_config.break_asymmetric = break_asymmetric
         
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
@@ -98,8 +92,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         is_causal: torch.Tensor = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
-        intervention_weight: torch.Tensor = None,
-        inference_mode = None,
+        source_intervention_weight: torch.Tensor = None,
+        base_intervention_weight: torch.Tensor = None,
     ):
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
@@ -111,8 +105,8 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_attention_mask=source_attention_mask,
             source_intervention_mask=source_intervention_mask,
             output_intervention_weight=output_intervention_weight,
-            intervention_weight=intervention_weight,
-            inference_mode=inference_mode
+            source_intervention_weight=source_intervention_weight,
+            base_intervention_weight=base_intervention_weight
         )
         
         if labels is not None:
@@ -161,22 +155,12 @@ class RavelInterpretorHypernetwork(nn.Module):
     # Generate text using the target model, with a new edit application at every step.
     # This is a very slow way to generate text.
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
-    def inspect_batch_prediction_ouptuts(self, batch, inference_mode=None, eval_n_label_tokens=None):
-        assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
+    def inspect_batch_prediction_ouptuts(self, batch, eval_n_label_tokens=None):
+        
         self.interpretor.eval()
         
         correct_idxs = []
         
-        if inference_mode == "groundtruth":
-            intervention_weight = torch.zeros(len(batch["editor_input_ids"]), batch["source_input_ids"].shape[1] + 1, batch["base_input_ids"].shape[1]).to("cuda")
-            intervention_weight[:, -1, :] = 1.0
-            
-            for i in range(len(batch["base_entity_position_ids"])):
-                intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
-                intervention_weight[i, batch["source_entity_position_ids"][i], batch["base_entity_position_ids"][i]] = 1.0
-            
-        else:
-            intervention_weight=None
         
         with torch.no_grad():
             
@@ -190,8 +174,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                 source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                 labels=batch["labels"].to("cuda"),
                 output_intervention_weight=True,
-                inference_mode=inference_mode,
-                intervention_weight=intervention_weight
             )    
             
             batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
