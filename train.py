@@ -161,33 +161,33 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=False)
+    parser.add_argument("--log_wandb", type=bool, default=True)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
-    parser.add_argument("--wandb_run_name", type=str, default=None)
+    parser.add_argument("--wandb_run_name", type=str, default="AutoRavel on Nobel Prize Winner")
     parser.add_argument("--intervention_layer", type=int, default=15)
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
     parser.add_argument("--n_epochs", type=int, default=5)
-    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
+    parser.add_argument("--model_name_or_path", type=str, default="/scr-ssd/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test_small")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/nobel_prize_winner_test_2000")
+    parser.add_argument("--train_path", type=str, default="./auto_ravel/Q5_processed")
     
     parser.add_argument("--sparsity_loss_type", type=str, default="threshold", choices=["entropy", "l1", "threshold"])
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.15)
+    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.5)
     parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.2)
     parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.0)
     
     parser.add_argument("--target_intervention_num", type=int, default=None)    
-    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
+    parser.add_argument("--causal_loss_weight", type=float, default=12)
     parser.add_argument("--iso_loss_weight", type=float, default=1)
     
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/city_threshold_sparsity")
+    parser.add_argument("--save_dir", type=str, default="/nlp/scr/sjd24/auto_ravel")
     parser.add_argument("--save_model", default=False, action="store_true")
     
     parser.add_argument('--debug_model', type=bool, default=False)
@@ -205,8 +205,8 @@ if __name__ == "__main__":
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=500)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=2000)
+    parser.add_argument("--eval_per_steps", type=int, default=2000)
+    parser.add_argument("--checkpoint_per_steps", type=int, default=5000)
     
     args = parser.parse_args()
     args = dict(args.__dict__)

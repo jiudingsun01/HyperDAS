@@ -139,7 +139,7 @@ def get_ravel_collate_fn(
             counterfactual_prefixes.append(b["counterfactual_input_prefix"])
             counterfactual_suffixes.append(b["counterfactual_input_suffix"])
             
-            targets.append(b["counterfactual_target"] if b["attribute_type"] == "causal" else b["target"])
+            targets.append(b["counterfactual_target"] if (b["attribute_type"] == "causal" or b["attribute_type"] == "cause") else b["target"])
             
             if contain_entity_position:
                 entities.append(b["entity"])
