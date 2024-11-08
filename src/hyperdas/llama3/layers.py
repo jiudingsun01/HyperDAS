@@ -9,6 +9,7 @@ from transformers.models.llama.modeling_llama import (
     LlamaConfig,
     LlamaRMSNorm,
     LlamaDecoderLayer,
+    LlamaMLP,
     apply_rotary_pos_emb,
     repeat_kv
 )
@@ -168,22 +169,27 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
 
         return attn_output, attn_weights, past_key_value
 
+
 class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         
         self.cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
         self.cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.cross_attn_mlp = LlamaMLP(config)
+        self.post_cross_attn_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
         source_hidden_states: Optional[torch.Tensor] = None,
-        source_attention_mask: Optional[torch.FloatTensor] = None,
         base_hidden_states: Optional[torch.Tensor] = None,
-        base_attention_mask: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        source_encoder_hidden_states: Optional[torch.Tensor] = None,
+        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        base_encoder_hidden_states: Optional[torch.Tensor] = None,
+        base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
@@ -210,7 +216,7 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
 
-        residual = hidden_states
+        residual = hidden_states    
 
         hidden_states = self.input_layernorm(hidden_states)
 
@@ -227,31 +233,16 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         )
         hidden_states = residual + hidden_states
         
-        if source_hidden_states is not None and not self.ablate_source_token_attention:
-            residual = hidden_states
-            hidden_states = self.source_cross_attn_input_layernorm(hidden_states)
-            source_cross_attn_outputs, _, _ = self.source_cross_attn(
-                hidden_states=hidden_states,
-                attention_mask=attention_mask,
-                encoder_hidden_states=source_hidden_states,
-                encoder_attention_mask=source_attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-            hidden_states = residual + source_cross_attn_outputs
+        if source_hidden_states is not None and source_encoder_hidden_states is not None:
+                        
+            source_residual = source_hidden_states
 
-        if base_hidden_states is not None and not self.ablate_base_token_attention:
-            residual = hidden_states
-            hidden_states = self.base_cross_attn_input_layernorm(hidden_states)
-            base_cross_attn_outputs, _, _ = self.base_cross_attn(
-                hidden_states=hidden_states,
+            source_hidden_states = self.cross_attn_input_layernorm(source_hidden_states)
+            source_cross_attn_outputs, _, _ = self.cross_attn(
+                hidden_states=source_hidden_states,
                 attention_mask=attention_mask,
-                encoder_hidden_states=base_hidden_states,
-                encoder_attention_mask=base_attention_mask,
+                encoder_hidden_states=source_encoder_hidden_states,
+                encoder_attention_mask=source_encoder_attention_mask,
                 position_ids=position_ids,
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
@@ -259,111 +250,60 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
                 cache_position=cache_position,
                 **kwargs,
             )
-            hidden_states = residual + base_cross_attn_outputs
+            source_hidden_states = source_residual + source_cross_attn_outputs
+            
+            # Fully Connected
+            source_residual = source_hidden_states
+            source_hidden_states = self.post_cross_attn_layernorm(source_hidden_states)
+            source_hidden_states = self.cross_attn_mlp(source_hidden_states)
+            source_hidden_states = source_residual + source_hidden_states
+            
+
+        if base_hidden_states is not None and base_encoder_hidden_states is not None:
+            
+            base_residual = base_hidden_states
+
+            base_hidden_states = self.cross_attn_input_layernorm(base_hidden_states)
+            base_cross_attn_outputs, _, _ = self.cross_attn(
+                hidden_states=base_hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=base_encoder_hidden_states,
+                encoder_attention_mask=base_encoder_attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+            base_hidden_states = base_residual + base_cross_attn_outputs
+            
+            # Fully Connected
+            base_residual = base_hidden_states
+            base_hidden_states = self.post_cross_attn_layernorm(base_hidden_states)
+            base_hidden_states = self.cross_attn_mlp(base_hidden_states)
+            base_hidden_states = base_residual + base_hidden_states
+            
            
         # Fully Connected
         residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        outputs = (hidden_states,)
-
-        if output_attentions:
-            outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
-
-        return outputs
-    
-    
-class LlamaDecoderLayerWithCrossAttention(LlamaDecoderLayer):
-    def __init__(self, config: LlamaConfig, layer_idx: int, add_cross_attention=False):
-        super().__init__(config, layer_idx)
-        if add_cross_attention:
-            self.cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-            self.cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*):
-                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
-                query_sequence_length, key_sequence_length)` if default attention is used.
-            output_attentions (`bool`, *optional*):
-                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                returned tensors for more detail.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-        """
-        if "padding_mask" in kwargs:
-            warnings.warn(
-                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
-            )
-
-        residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            **kwargs,
-        )
-        hidden_states = residual + hidden_states
         
-        if encoder_hidden_states is not None:
-            # add one self-attention block for cross-attention
-            if not hasattr(self, "cross_attn") or not hasattr(self, "cross_attn_input_layernorm"):
-                raise ValueError(
-                    f"If `encoder_hidden_states` are passed, {self} has to be instantiated with "
-                    "cross-attention layers by setting `add_cross_attention=True`"
-                )
-            residual = hidden_states
-            hidden_states = self.cross_attn_input_layernorm(hidden_states)
-            cross_attn_outputs, _, _ = self.cross_attn(
-                hidden_states=hidden_states,
-                attention_mask=attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                encoder_attention_mask=encoder_attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-            hidden_states = residual + cross_attn_outputs
-            
-        # Fully Connected
-        residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
+        
+        if source_hidden_states is not None:
+            outputs += (source_hidden_states,)
+        else:
+            outputs += (None,)
+        
+        if base_hidden_states is not None:
+            outputs += (base_hidden_states,)
+        else:
+            outputs += (None,)
+            
 
         if output_attentions:
             outputs += (self_attn_weights,)
@@ -406,24 +346,10 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         n_tokens = encoder_attention_mask.shape[-1] // n_layers
         
         batch_size = encoder_attention_mask.shape[0]
+        
         encoder_attention_mask = encoder_attention_mask.reshape(batch_size, n_tokens, n_layers)[:, :, self.intervention_layer]
+        
         encoder_hidden_states = encoder_hidden_states.reshape(batch_size, n_tokens, n_layers, -1)[:, :, self.intervention_layer, :]
-        
-        print(encoder_hidden_states.shape, encoder_attention_mask.shape)
-        print(hidden_states.shape, attention_mask.shape)
-        
-        raise NotImplementedError
-        
-        encoder_hidden_states = encoder_hidden_states.reshape(
-            batch_size, 
-            n_tokens,
-            -1
-        )
-        
-        encoder_attention_mask = encoder_attention_mask.reshape(
-            batch_size,
-            n_tokens
-        )
         
         bsz, q_len, _ = hidden_states.size()
         _, kv_len, _ = encoder_hidden_states.size()
@@ -473,6 +399,8 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         
         query_states = query_states[:, :, -1, :].unsqueeze(2) # Take the last token from the editor instruction
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+        
+
 
         """
         if attention_mask is not None:  # no matter the length, we just slice it
@@ -482,11 +410,13 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         
         # convert encoder attention mask from 1->0, 0->-inf to mask attention weights before softmax
         encoder_attention_mask = self._update_encoder_attention_mask(encoder_attention_mask, attn_weights)
-        
+                
         attn_weights = attn_weights + encoder_attention_mask.unsqueeze(1)
         attn_weights = torch.mean(attn_weights, dim=1, keepdim=False)
-        attn_weights = attn_weights.view(bsz, 1, source_n_tokens + 1, base_n_tokens).squeeze()
-        attn_weights = nn.functional.softmax(attn_weights, dim=1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = attn_weights.squeeze()
         
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        
+
         # return None, attn_weights, past_key_value
         return attn_weights

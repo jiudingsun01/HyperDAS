@@ -9,6 +9,26 @@ from torch.utils.data import DataLoader
 
 
 
+def cleanup_dataset(dataset):
+    
+    
+    error_idxs = []
+    
+    for i in range(len(dataset)):
+        
+        if dataset[i]["input_prefix"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["counterfactual_input_prefix"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["target"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["counterfactual_target"] == "":
+            error_idxs.append(i)
+            
+    print(f"Found {len(error_idxs)} errors in the dataset")
+    return dataset.select([i for i in range(len(dataset)) if i not in error_idxs])
+    
+
 def get_ravel_collate_fn(
     tokenizer, 
     contain_entity_position=False, 
@@ -16,6 +36,7 @@ def get_ravel_collate_fn(
     source_suffix_visibility=False,
     base_suffix_visibility=False,
     add_space_before_target=True,
+    bos_token_visibility=False,
 ):
     
     """
@@ -62,12 +83,13 @@ def get_ravel_collate_fn(
             source_entity_position_ids = []
             base_entity_position_ids = []
         
-        tokenized = tokenizer(input_texts, return_tensors="pt", padding=True, max_length=50, truncation=True)
-        tokenized_counterfactual = tokenizer(counterfactual_texts, return_tensors="pt", padding=True, max_length=50, truncation=True)
+        tokenized = tokenizer(input_texts, return_tensors="pt", padding=True, truncation=True)
+        tokenized_counterfactual = tokenizer(counterfactual_texts, return_tensors="pt", padding=True, truncation=True)
         tokenized_labels = []
         
         for i, input_ids in enumerate(tokenized["input_ids"]):
-            input_prompt = tokenizer.bos_token + prefixes[i] + suffixes[i]
+            
+            input_prompt = tokenizer.bos_token + prefixes[i] + suffixes[i] 
             prompt_length = tokenizer(input_prompt, return_tensors="pt", padding=False)["input_ids"].shape[-1]
             if tokenizer.padding_side == "left":
                 prompt_length += torch.sum(input_ids == tokenizer.pad_token_id)
@@ -86,20 +108,63 @@ def get_ravel_collate_fn(
             
             source_visibility_mask = tokenized_counterfactual["attention_mask"][i].clone()
             base_visibility_mask = tokenized["attention_mask"][i].clone()
-            
+        
             label_length = torch.sum(label != -100)
             base_visibility_mask[-label_length:] = 0
             
+            if not bos_token_visibility:
+                
+                source_bos_token_position = torch.where(tokenized_counterfactual["input_ids"][i] == tokenizer.bos_token_id)[0][-1]
+                base_bos_token_position = torch.where(input_ids == tokenizer.bos_token_id)[0][-1]
+                
+                source_visibility_mask[source_bos_token_position] = 0
+                base_visibility_mask[base_bos_token_position] = 0
+            
             if not source_suffix_visibility:
                 source_suffix_length = tokenizer(counterfactual_suffixes[i], return_tensors="pt", padding=False)["input_ids"].shape[-1]
-                source_visibility_mask[-source_suffix_length:] = 0
+                
+                if source_suffix_length > 0:
+                    source_visibility_mask[-source_suffix_length:] = 0
                 
             if not base_suffix_visibility:
                 base_suffix_length = tokenizer(suffixes[i], return_tensors="pt", padding=False)["input_ids"].shape[-1]
-                base_visibility_mask[prompt_length - base_suffix_length:] = 0
+                
+                if base_suffix_length > 0:
+                    base_visibility_mask[prompt_length - base_suffix_length:] = 0
                 
             source_intervention_visibility_masks.append(source_visibility_mask)
             base_intervention_visibility_masks.append(base_visibility_mask)
+        
+            if source_visibility_mask.sum() == 0 or base_visibility_mask.sum(dim=-1) == 0:
+                
+                if source_visibility_mask.sum() == 0:
+                    print("Source Text: ", counterfactual_texts[i])
+                    print("Source Input: ", tokenized_counterfactual["input_ids"][i])
+                    print("Source Mask: ", source_visibility_mask)
+                    print("Source Attention Mask: ", tokenized_counterfactual["attention_mask"][i])
+                    print("Source BOS Token Position: ", source_bos_token_position)
+                    
+                    if not source_suffix_visibility:
+                        print("Source Suffix: ", counterfactual_suffixes[i])
+                        print("Source Suffix Length: ", source_suffix_length)
+                
+                if base_visibility_mask.sum() == 0:
+                    print("Base Text: ", input_texts[i])
+                    print("Base Input: ", tokenized["input_ids"][i])
+                    print("Base Mask: ", base_visibility_mask)
+                    print("Base Attention Mask: ", tokenized["attention_mask"][i])
+                    print("Base BOS Token Position: ", base_bos_token_position)
+                    
+                    if not base_suffix_visibility:
+                        print("Base Suffix: ", suffixes[i])
+                        print("Base Suffix Length: ", base_suffix_length)
+                
+                print("Prompt Length: ", prompt_length)
+                print("Label: ", label)
+                print("Label Text: ", target_texts[i])
+                print("Tokenized Label: ", tokenizer(target_texts[i]))
+                print("Label Length: ", label_length)
+                raise ValueError("Attention Mask is all 0")
                 
         base_intervention_mask = torch.stack(base_intervention_visibility_masks)
         source_intervention_mask = torch.stack(source_intervention_visibility_masks)

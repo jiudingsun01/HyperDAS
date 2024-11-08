@@ -145,9 +145,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                 loss_weight = loss_weight[label_indices]
                 criterion = torch.nn.CrossEntropyLoss(reduction="none")
                 loss = criterion(log_prob_predictions, labels.long())
-                
+                                
                 loss = (loss * loss_weight).mean()
-                
+            
+            
             _pred["loss"] = loss
         
         return _pred
@@ -160,7 +161,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor.eval()
         
         correct_idxs = []
-        
         
         with torch.no_grad():
             
@@ -205,14 +205,14 @@ class RavelInterpretorHypernetwork(nn.Module):
                     correct_idxs.append(i)
                 correct += is_correct
                 
-        intervention_weight = predictions.intervention_weight
-        batch_intervention_entropy = self._intervention_entropy(intervention_weight, mean=False)
+        source_intervention_weight = predictions.source_intervention_weight
+        base_intervention_weight = predictions.base_intervention_weight
                 
         return_dict = {
             "batch_output": batch_output,
             "batch_full_output": batch_full_output,
-            "batch_intervention_weight": intervention_weight,
-            "batch_intervention_entropy": batch_intervention_entropy,
+            "batch_source_intervention_weight": source_intervention_weight,
+            "batch_base_intervention_weight": base_intervention_weight,
             "n_correct": correct,
             "correct_idxs": correct_idxs
         }   
@@ -224,7 +224,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         data_loader, 
         idxs, 
         batch_size=4, 
-        inference_mode=None, 
         annot=True,
         indicate_masked_tokens=False,
         digits=2,
@@ -242,7 +241,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             if i == batch_id:
                 break
             
-        plot_multiple_modes = type(inference_mode) == list and len(inference_mode) > 1
         editor_input_ids = batch["editor_input_ids"][example_id]
         base_input_ids = batch["base_input_ids"][example_id]
         source_input_ids = batch["source_input_ids"][example_id]
@@ -259,12 +257,10 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_intervention_mask = batch["source_intervention_mask"][example_id]
             base_intervention_mask = base_intervention_mask[~base_padding_idx]
             source_intervention_mask = source_intervention_mask[~source_padding_idx]
-            source_intervention_mask = torch.cat([source_intervention_mask, torch.tensor([True])])
                     
         # Add a False value to the end of the source_padding_idx to account for the [SELF] token
-        intervention_weight_source_padding_idx = torch.cat([source_padding_idx, torch.tensor([False])])
         
-        source_axis = [self.tokenizer.decode([i]) for i in source_input_ids] + ["[SELF]"]
+        source_axis = [self.tokenizer.decode([i]) for i in source_input_ids]
         base_axis = [self.tokenizer.decode([i]) for i in base_input_ids]
         
         for axis in [source_axis, base_axis]:
@@ -315,72 +311,47 @@ class RavelInterpretorHypernetwork(nn.Module):
             ax.set_xlabel("Base Sentence Tokens")
             ax.set_ylabel("Counterfactual Sentence Tokens")
             
-        def process_intervention_weight(intervention_weight):
-            intervention_weight = intervention_weight[~intervention_weight_source_padding_idx, :]
-            intervention_weight = intervention_weight[:, ~base_padding_idx]
-            return intervention_weight
         
         
-        if not plot_multiple_modes:
-            inference_mode = inference_mode if type(inference_mode) != list else inference_mode[0]
-            results = self.inspect_batch_prediction_ouptuts(batch, inference_mode=inference_mode, eval_n_label_tokens=3)
-            predictions = results['batch_output'][example_id]
-            intervention_weight = results["batch_intervention_weight"][example_id]
-        else:
-            results = []
-            for mode in inference_mode:
-                result = self.inspect_batch_prediction_ouptuts(batch, inference_mode=mode, eval_n_label_tokens=3)
-                results.append(result)
-            
-            predictions = [r['batch_output'][example_id] for r in results]
-            intervention_weight = [r["batch_intervention_weight"][example_id] for r in results]
+        results = self.inspect_batch_prediction_ouptuts(batch, eval_n_label_tokens=3)
+        predictions = results['batch_output'][example_id]
+        source_intervention_weight = results["batch_source_intervention_weight"][example_id]
+        base_intervention_weight = results["batch_base_intervention_weight"][example_id]
         
         # set background color to be grey
-        if plot_multiple_modes:
-            style = sns.axes_style("dark")
-            style["axes.facecolor"] = "#100a17"
+    
+        style = sns.axes_style("dark")
+        style["axes.facecolor"] = "#100a17"
+            
+        sns.set(style=style, font_scale=font_scale)
+        if axes is None:
+            fig, axes = plt.subplots(2, 1, figsize=(15, 4))
+            
         
-            sns.set(style=style, font_scale=3)
-            intervention_weight = [process_intervention_weight(iw) for iw in intervention_weight]
-            
-            if axes is not None:
-                assert len(axes) == len(inference_mode)
-            else:
-                fig, axes = plt.subplots(1, len(inference_mode), figsize=(10 + 15 * len(inference_mode), 15))
-                
-            for i, ax in enumerate(axes):
-                plot_inference_model(
-                    ax=ax,
-                    intervention_weight=intervention_weight.pop(0),
-                    prediction=predictions.pop(0)
-                )
-                
-                if i != 0:
-                    ax.set_ylabel("") # remove y-axis label for all but the first plot
-                
-                if i != len(axes) - 1:
-                    # remove the heatmap colorbar for all but the last plot
-                    ax.collections[0].colorbar.remove()
-                    
-        else:
-            style = sns.axes_style("dark")
-            style["axes.facecolor"] = "#100a17"
-            
-            sns.set(style=style, font_scale=font_scale)
-            intervention_weight = process_intervention_weight(intervention_weight)
-            if axes is None:
-                fig, axes = plt.subplots(figsize=(15, 15))
-            plot_inference_model(
-                ax=axes,
-                intervention_weight=intervention_weight,
-                prediction=predictions
-            )
+        source_intervention_weight = source_intervention_weight[~source_padding_idx].unsqueeze(0)
+
+        base_intervention_weight = base_intervention_weight[~base_padding_idx].unsqueeze(0)
+        source_intervention_mask = (source_intervention_mask == 0).unsqueeze(0)
+        base_intervention_mask = (base_intervention_mask == 0).unsqueeze(0)
+        
+        sns.heatmap(source_intervention_weight.float().cpu().numpy(), xticklabels=source_axis, ax=axes[0], annot=annot, fmt=f".{digits}f", mask=source_intervention_mask.float().cpu().numpy())
+        sns.heatmap(base_intervention_weight.float().cpu().numpy(), xticklabels=base_axis, ax=axes[1], annot=annot, fmt=f".{digits}f", mask=base_intervention_mask.float().cpu().numpy())
+        
+        
+        axes[0].set_yticklabels([""])
+        axes[1].set_yticklabels([""])
+        
+        axes[0].set_ylabel("Source Sentence")
+        axes[1].set_ylabel("Base Sentence")
+        
+        axes[0].set_title(f"Instruction: {editor_text}     Label: {label}    Pred: {predictions}")
+        
+        plt.subplots_adjust(hspace=1) 
         
         return fig, axes
         
         
-    def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
-        assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
+    def eval_accuracy(self, test_loader, eval_n_label_tokens=None):
         
         self.interpretor.eval()
         test_loss = []
@@ -390,18 +361,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         with torch.no_grad():
             for batch_id, batch in tqdm(
                 enumerate(test_loader), desc="Evaluating", total=len(test_loader)
-            ):
-                
-                if inference_mode == "groundtruth":
-                    intervention_weight = torch.zeros(len(batch["editor_input_ids"]), batch["source_input_ids"].shape[1] + 1, batch["base_input_ids"].shape[1]).to("cuda")
-                    intervention_weight[:, -1, :] = 1.0
-                    
-                    for i in range(len(batch["base_entity_position_ids"])):
-                        intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
-                        intervention_weight[i, batch["source_entity_position_ids"][i], batch["base_entity_position_ids"][i]] = 1.0
-                else:
-                    intervention_weight=None
-                                        
+            ):         
                 predictions = self.forward(
                     editor_input_ids=batch["editor_input_ids"].to("cuda"),
                     base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -411,12 +371,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                     source_attention_mask=batch["source_attention_mask"].to("cuda"),
                     source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                     labels=batch["labels"].to("cuda"),
-                    inference_mode=inference_mode,
-                    intervention_weight=intervention_weight
                 )
+                
                 test_loss.append(predictions["loss"].item())
-                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                    self.interpretor.zero_penalty()
+                """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                    self.interpretor.zero_penalty()"""
                 
                 batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
@@ -456,84 +415,30 @@ class RavelInterpretorHypernetwork(nn.Module):
                     
         return accuracies, sum(test_loss) / len(test_loss), correct_idxs
     
-    def _intervention_number(self, intervention_weight, mean=True):
-        p = intervention_weight[:, :-1, :]
-        p = torch.sum(p, dim=-1)
-        p = torch.sum(p, dim=-1)
-        
-        if mean:
-            p = torch.mean(p)
-        
-        return p
     
-    def _intervention_entropy(self, intervention_weight, mean=True, normalize=False, balanced=False, atticus=False):
-        
-        """
-        Normalize the weight along dim=-1; if weight is zero across all tokens, then return itself
-        """
-        
-        
-        def __normalize(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=True)
-            weight_sum[weight_sum == 0.0] = 1.0
-            return weight / weight_sum
-        
-        def __balance(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
-            weight_sum[weight_sum == 0.0] = 1.0
-            return weight_sum
-        
-        def __append_column(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
-            new_column = torch.max(1.0 - weight_sum, torch.tensor(0.0).to(weight.device))
-            return torch.cat([weight, new_column.unsqueeze(-1)], dim=-1)
-
-        p = intervention_weight[:, :-1, :]
-        
-        if atticus:
-            p = __append_column(p)
-        
-        if normalize:
-            p = __normalize(p)
-            
-        
-        logp = torch.log(p + 1e-8)
-        entropy = - torch.sum(p * logp, dim=-1)
-        
-        
-        if balanced:
-            balanced_weight = __balance(intervention_weight[:, :-1, :])
-            
-            entropy = entropy * torch.pow(balanced_weight, 0.5)
-
+    def _entropy(self, x, mean=True):
+                
         if mean:
-            entropy = torch.mean(entropy, dim=0)
-            entropy = torch.mean(entropy)
+            return -torch.sum(x * torch.log(x + 1e-12), dim=-1).mean()
         
-        return entropy         
+        return -torch.sum(x * torch.log(x + 1e-12), dim=-1)
+    
 
     def run_train(
         self,
         train_loader,
         test_loader=None,
-        inference_modes=[None],
-        debug_model=False,
         epochs=1,
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
-        apply_source_selection_sparsity_loss=False,
-        sparsity_loss_weight_start=0.5,
-        sparsity_loss_weight_end=1.0,
-        sparsity_loss_warm_up_ratio=0.1,
         causal_loss_weight=1.0,
         iso_loss_weight=1.0,
         lr=3e-4,
         weight_decay=0.01,
         save_dir=None,
         save_model=False,
-        schedule_sparsity_loss=True,
-        target_intervention_num=None,
-        sparsity_loss_type="entropy",
+        sparsity_loss=True,
+        sparsity_loss_weight=1.0,
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
@@ -564,15 +469,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             ).to(self.interpretor_config.torch_dtype).to("cuda")
             self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
             
-        # Create a scheduler for the sparsity loss that is very small at the beginning from sparsity_loss_weight_start and increases to the sparsity_loss_weight_end
-        # over the course of the training. Before sparsity_loss_warm_up_ratio * total_steps steps, the sparsity loss is not applied.
-        if schedule_sparsity_loss:
-            warm_up_steps = int(sparsity_loss_warm_up_ratio * total_steps)
-            sparsity_loss_schedule = torch.linspace(
-                sparsity_loss_weight_start, sparsity_loss_weight_end, total_steps + 1
-            ).to(self.interpretor_config.torch_dtype).to("cuda")
-            sparsity_loss_schedule[:warm_up_steps] = 0.0
-
         for epoch in range(epochs):
             # Create a tqdm progress bar
             with tqdm(
@@ -583,7 +479,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             ) as pbar:
                 num_datapoints_in_epoch = 0
                 epoch_train_loss = 0
-                epoch_gradient_norm = 0
                 # Train loop
                 for step, batch in enumerate(
                     train_loader
@@ -592,29 +487,26 @@ class RavelInterpretorHypernetwork(nn.Module):
                         if cur_steps % eval_per_steps == 0:
                             # Evaluate the model
                             
-                            for mode in inference_modes:
-                                accuracies, test_loss, _ = self.eval_accuracy(
-                                    test_loader, inference_mode=mode, eval_n_label_tokens=3
+                            accuracies, test_loss, _ = self.eval_accuracy(
+                                test_loader, eval_n_label_tokens=3
+                            )
+                                
+                                
+                            causal_acc = accuracies["causal"]
+                            isolate_acc = accuracies["isolate"]
+                            disentangle_acc = accuracies["disentangle"]
+                                                        
+                            if wandb.run:
+                                wandb.log(
+                                    {
+                                        f"test_average_loss": test_loss,
+                                        f"causal_accuracy": causal_acc,
+                                        f"isolate_accuracy": isolate_acc,
+                                        f"disentangle_accuracy": disentangle_acc,
+                                    }
                                 )
                                 
-                                text_mode = "default" if mode is None else mode
-                                
-                                causal_acc = accuracies["causal"]
-                                isolate_acc = accuracies["isolate"]
-                                disentangle_acc = accuracies["disentangle"]
-                                                        
-                                if wandb.run:
-                                    wandb.log(
-                                        {
-                                            f"{text_mode}_test_average_loss": test_loss,
-                                            f"{text_mode}_causal_accuracy": causal_acc,
-                                            f"{text_mode}_isolate_accuracy": isolate_acc,
-                                            f"{text_mode}_disentangle_accuracy": disentangle_acc,
-                                        }
-                                    )
-                                
-                                print("Under Inference Mode: ", text_mode)
-                                print(f"Disentangle Acc: {disentangle_acc}, Causal Acc: {causal_acc}, Isolate Acc: {isolate_acc}, Test Loss: {test_loss}")
+                            print(f"Disentangle Acc: {disentangle_acc}, Causal Acc: {causal_acc}, Isolate Acc: {isolate_acc}, Test Loss: {test_loss}")
                         
                     if checkpoint_per_steps is not None:
                         if cur_steps % checkpoint_per_steps == 0 and save_dir is not None and save_model:
@@ -625,96 +517,49 @@ class RavelInterpretorHypernetwork(nn.Module):
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
                     
-                    if not debug_model:
-                        prediction = self.forward(
-                            editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                            base_input_ids=batch["base_input_ids"].to("cuda"),
-                            base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                            base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                            source_input_ids=batch["source_input_ids"].to("cuda"),
-                            source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                            source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
-                            labels=batch["labels"].to("cuda"),
-                            is_causal=batch["is_causal"].to("cuda"),
-                            causal_loss_weight=causal_loss_weight,
-                            iso_loss_weight=iso_loss_weight,
-                            output_intervention_weight=True,
-                            inference_mode=None
-                        )
-                    else:
-                        
-                        intervention_weight = torch.zeros(len(batch["editor_input_ids"]), batch["source_input_ids"].shape[1] + 1, batch["base_input_ids"].shape[1]).to("cuda")
-                        intervention_weight[:, -1, :] = 1.0
-                        
-                        for i in range(len(batch["base_entity_position_ids"])):
-                            intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
-                            intervention_weight[i, batch["source_entity_position_ids"][i], batch["base_entity_position_ids"][i]] = 1.0
-                            
-                        prediction = self.forward(
-                            editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                            base_input_ids=batch["base_input_ids"].to("cuda"),
-                            base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                            base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                            source_input_ids=batch["source_input_ids"].to("cuda"),
-                            source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                            source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
-                            labels=batch["labels"].to("cuda"),
-                            is_causal=batch["is_causal"].to("cuda"),
-                            causal_loss_weight=causal_loss_weight,
-                            iso_loss_weight=iso_loss_weight,
-                            output_intervention_weight=True,
-                            intervention_weight=intervention_weight,
-                            inference_mode="groundtruth"
-                        )
+                    prediction = self.forward(
+                        editor_input_ids=batch["editor_input_ids"].to("cuda"),
+                        base_input_ids=batch["base_input_ids"].to("cuda"),
+                        base_attention_mask=batch["base_attention_mask"].to("cuda"),
+                        base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
+                        source_input_ids=batch["source_input_ids"].to("cuda"),
+                        source_attention_mask=batch["source_attention_mask"].to("cuda"),
+                        source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
+                        labels=batch["labels"].to("cuda"),
+                        is_causal=batch["is_causal"].to("cuda"),
+                        causal_loss_weight=causal_loss_weight,
+                        iso_loss_weight=iso_loss_weight,
+                        output_intervention_weight=True,
+                    )
                     
                     training_loss = 0
                     
                     prediction_loss = prediction["loss"]                            
                     training_loss += prediction_loss
-                                        
-                    if apply_source_selection_sparsity_loss:
+                    
+                    if sparsity_loss:
                         
-                        if sparsity_loss_type == "entropy":
+                        source_intervention_weight = prediction["source_intervention_weight"]
+                        base_intervention_weight = prediction["base_intervention_weight"]
                         
-                            source_selection_sparsity_loss = self._intervention_entropy(prediction.intervention_weight)
-                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                        source_entropy = self._entropy(source_intervention_weight, mean=True)
+                        base_entropy = self._entropy(base_intervention_weight, mean=True)
                         
-                        elif sparsity_loss_type == "l1":
-                            
-                            source_selection_sparsity_loss = torch.sum(prediction.intervention_weight[:, :-1, :]) / prediction.intervention_weight[:, :-1, :].numel()
-                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
-                            
-                        elif sparsity_loss_type == "threshold":
-                            
-                            source_selection_sum = prediction.intervention_weight[:, :-1, :].sum(dim=-1)
-                            source_selection_loss = torch.where(
-                                source_selection_sum > 1.0,
-                                source_selection_sum,
-                                torch.zeros_like(source_selection_sum)
-                            ).sum(dim=-1)
-                            source_selection_sparsity_loss = source_selection_loss.mean()
-                            
-                            step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                            training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                        sparsity_loss = sparsity_loss_weight * (source_entropy + base_entropy)
+                        training_loss += sparsity_loss
                         
-                    if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                                            
+                    """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
                         penalty = self.interpretor.get_penalty()
                         training_loss += penalty
-                        self.interpretor.zero_penalty()
-                        
-                    if target_intervention_num is not None:
-                        assert type(target_intervention_num) == int
-                        
-                        source_target_intervention_num = self._intervention_number(prediction.intervention_weight, mean=True)
-                        intervention_number_loss = (source_target_intervention_num - target_intervention_num) ** 2
-                        training_loss += intervention_number_loss
-                    
+                        self.interpretor.zero_penalty()"""
+
                     training_loss.backward()
                     nn.utils.clip_grad_norm_(
                         self.parameters(), 4.0
                     )
+                    # print(prediction.logits)
+                    # print(self.interpretor.hypernetwork.model.layers[1].self_attn.q_proj.weight.grad)
                     self.opt.step()
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
@@ -729,23 +574,21 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "train_batch_prediction_loss": prediction_loss.item(),
                     }
                     
-                    if apply_source_selection_sparsity_loss:
-                        metrics["train_batch_sparsity_loss"] = source_selection_sparsity_loss.item()
+                    if sparsity_loss:
+                        metrics["train_batch_source_sparsity_loss"] = source_entropy.item()
+                        metrics["train_batch_base_sparsity_loss"] = base_entropy.item()
                         
-                    if target_intervention_num is not None:
-                        metrics["train_batch_#intervention_loss"] = intervention_number_loss.item()
-                    
-                    if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                        metrics["train_batch_penalty"] = penalty.item()
+                    """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                        metrics["train_batch_penalty"] = penalty.item()"""
 
                     if wandb.run:
                         wandb.log(metrics)
+                        
+                    if torch.isnan(prediction_loss):
+                        raise
+                        
                     if cur_steps % 5 == 0:
-                        output_metrics = {**metrics}
-                        if apply_source_selection_sparsity_loss:
-                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight.item()
-                            
-                        print(output_metrics)
+                        print(metrics)
 
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!
@@ -762,18 +605,15 @@ class RavelInterpretorHypernetwork(nn.Module):
                     )
                     
         result_dict = {}
-        for inference_mode in inference_modes:
-            accs, test_loss, correct_indices = self.eval_accuracy(test_loader, inference_mode=inference_mode, eval_n_label_tokens=3)
-            if inference_mode is None:
-                inference_mode = "default"
-            result_dict[inference_mode] = {
-                "accs": accs,
-                "test_loss": test_loss,
-                "correct_indices": correct_indices,
-            }
-            
-            for k, v in accs.items():
-                print(f"{inference_mode} {k}: {v}")
+        accs, test_loss, correct_indices = self.eval_accuracy(test_loader, eval_n_label_tokens=3)
+        result_dict = {
+            "accs": accs,
+            "test_loss": test_loss,
+            "correct_indices": correct_indices,
+        }
+        
+        for k, v in accs.items():
+            print(f"{k}: {v}")
                     
         # Save the final model
         if save_dir is not None:
