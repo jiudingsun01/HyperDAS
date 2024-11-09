@@ -12,6 +12,7 @@ data/
 *.out
 
 scripts/
+multirun
 
 .env
 outputs/
