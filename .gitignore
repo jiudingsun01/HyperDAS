@@ -12,3 +12,8 @@ data/
 *.out
 
 scripts/
+
+multirun/
+.env
+assets/
+outputs/
