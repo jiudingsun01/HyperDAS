@@ -153,9 +153,9 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=False)
+    parser.add_argument("--log_wandb", type=bool, default=True)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
-    parser.add_argument("--wandb_run_name", type=str, default=None)
+    parser.add_argument("--wandb_run_name", type=str, default="Debug")
     parser.add_argument("--intervention_layer", type=int, default=15)
     
     parser.add_argument("--load_trained_from", type=str, default=None)
@@ -166,8 +166,8 @@ if __name__ == "__main__":
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test_small")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
     
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.5)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=0.5)
     
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/city_new")
+    parser.add_argument("--save_dir", type=str, default="/nlp/scr/sjd24/city_debug")
     parser.add_argument("--save_model", default=False, action="store_true")
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
