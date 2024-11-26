@@ -1,12 +1,20 @@
-from pyvene import IntervenableConfig, RepresentationConfig, LowRankRotatedSpaceIntervention, IntervenableModel, count_parameters
-import torch.nn as nn
-import torch
-import os
-import wandb
 import json
-
+import os
+from deepspeed.profiling.flops_profiler import get_model_profile
+import time
+import torch
+import torch.nn as nn
 from tqdm import tqdm
 from transformers import LlamaForCausalLM
+
+import wandb
+from pyvene import (
+    IntervenableConfig,
+    IntervenableModel,
+    LowRankRotatedSpaceIntervention,
+    RepresentationConfig,
+    count_parameters,
+)
 
 
 class RavelMDASNetwork(nn.Module):
@@ -192,6 +200,12 @@ class RavelMDASNetwork(nn.Module):
         
         cur_steps = 0
         
+        total_tflops = 0
+        pure_train_time = 0
+        profile_frequency = 100
+        last_profiled_flops = None
+        
+        
         for epoch in range(epochs):
             # Create a tqdm progress bar
             with tqdm(
@@ -246,6 +260,8 @@ class RavelMDASNetwork(nn.Module):
                         
                         base_intervention_position = torch.tensor([base_intervention_position] * batch["base_input_ids"].shape[0]).to("cuda")
                         source_intervention_position = torch.tensor([source_intervention_position] * batch["source_input_ids"].shape[0]).to("cuda")
+                        
+                    train_start = time.time()
                     
                     output = self.forward(
                         base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -301,6 +317,51 @@ class RavelMDASNetwork(nn.Module):
                     optimizer.step()
                     optimizer.zero_grad()
                     
+                    train_end = time.time()
+
+                    
+                    if cur_steps % profile_frequency == 0:
+                        profile_inputs = (
+                            batch["base_input_ids"].to("cuda"),
+                            batch["base_attention_mask"].to("cuda"), 
+                            base_intervention_position,
+                            None,
+                            batch["source_input_ids"].to("cuda"),
+                            batch["source_attention_mask"].to("cuda"),
+                            source_intervention_position,
+                            None,
+                            self.intervention_layer,
+                        )
+    
+                        # Count FLOPs using deepspeed
+                        with torch.no_grad():
+                            try:
+                                flops, _, _ = get_model_profile(
+                                    model=self,
+                                    args=profile_inputs,
+                                    print_profile=False,
+                                    detailed=False
+                                )
+                                # DeepSpeed returns flops as a string like "1.23 TFLOPS"
+                                if isinstance(flops, str):
+                                    step_tflops = float(flops.split()[0])
+                                else:
+                                    step_tflops = flops / 10**12  # Convert to TFLOPS
+                            except Exception as e:
+                                print(f"Warning: DeepSpeed profiling failed: {e}")
+                                step_tflops = last_profiled_flops if last_profiled_flops else 0
+
+                        last_profiled_flops = step_tflops
+                    else:
+                        step_tflops = last_profiled_flops
+ 
+                    # Estimate backward pass FLOPs (typically 2-3x forward pass)
+                    # Using 2x as a conservative estimate
+                    backward_tflops = 2 * step_tflops
+    
+                    total_tflops += step_tflops + backward_tflops
+                    pure_train_time += train_end - train_start
+                    
                     # TEST: orthogonalize the rotation matrix every step
                     """if self.use_das_intervention:
                         self.interpretor.das_module.orthogonalize_rotation_matrix()"""
@@ -309,6 +370,10 @@ class RavelMDASNetwork(nn.Module):
                         "step": cur_steps,
                         "train_batch_total_loss": training_loss.item(),
                         "train_batch_prediction_loss": prediction_loss.item(),
+                        "overhead/train_batch_tflops": backward_tflops + step_tflops,
+                        "overhead/train_batch_time": train_end - train_start,
+                        "overhead/train_cumulative_tflops": total_tflops,
+                        "overhead/train_cumulative_time": pure_train_time,
                     }
 
                     if wandb.run:

@@ -153,7 +153,7 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=False)
+    parser.add_argument("--log_wandb", default=False, action="store_true")
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default=None)
     parser.add_argument("--intervention_layer", type=int, default=15)

@@ -1,9 +1,13 @@
+from contextlib import redirect_stdout
+import itertools
 import torch
-from.modules import LlamaInterpretorConfig, LlamaInterpretor
+from fvcore.nn import FlopCountAnalysis
+from .modules import LlamaInterpretorConfig, LlamaInterpretor
 from ..utils import InterpretorModelOutput
 from transformers import AutoTokenizer
 import torch.nn as nn
 import torch.optim as optim
+from deepspeed.profiling.flops_profiler import get_model_profile
 import seaborn as sns
 import matplotlib.pyplot as plt
 import wandb
@@ -524,6 +528,11 @@ class RavelInterpretorHypernetwork(nn.Module):
             ).to(self.interpretor_config.torch_dtype).to("cuda")
             sparsity_loss_schedule[:warm_up_steps] = 0.0
 
+        total_tflops = 0
+        pure_train_time = 0 
+        profile_frequency = 100
+        last_profiled_flops = None
+
         for epoch in range(epochs):
             # Create a tqdm progress bar
             with tqdm(
@@ -576,6 +585,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
                     
+                    train_start = time.time()
+
                     prediction = self.forward(
                         editor_input_ids=batch["editor_input_ids"].to("cuda"),
                         base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -611,6 +622,52 @@ class RavelInterpretorHypernetwork(nn.Module):
                         training_loss += sparsity_loss_schedule[cur_steps] * batch_source_selection_loss
                     
                     training_loss.backward()
+ 
+                    # Count FLOPS periodically without warmup overhead
+                    if cur_steps % profile_frequency == 0:
+                        profile_inputs = (
+                            batch["editor_input_ids"].to("cuda"),
+                            batch["base_input_ids"].to("cuda"),
+                            batch["base_attention_mask"].to("cuda"),
+                            batch["base_intervention_mask"].to("cuda"),
+                            batch["source_input_ids"].to("cuda"),
+                            batch["source_attention_mask"].to("cuda"),
+                            batch["source_intervention_mask"].to("cuda"),
+                            batch["labels"].to("cuda"),
+                            True,
+                            batch["is_causal"].to("cuda"),
+                            causal_loss_weight,
+                            iso_loss_weight,
+                            None,
+                            None
+                        )
+ 
+                        try:
+                            with torch.no_grad():
+                                flops, _, _ = get_model_profile(
+                                    model=self,
+                                    args=profile_inputs,
+                                    print_profile=False,
+                                    detailed=False
+                                )
+                            # DeepSpeed returns flops as a string like "1.23 TFLOPS"
+                            if isinstance(flops, str):
+                                step_tflops = float(flops.split()[0])
+                            else:
+                                step_tflops = flops / 10**12  # Convert to TFLOPS
+                        except Exception as e:
+                            print(f"Warning: DeepSpeed profiling failed: {e}")
+                            step_tflops = last_profiled_flops if last_profiled_flops else 0
+                        last_profiled_flops = step_tflops
+                    else:
+                        step_tflops = last_profiled_flops
+ 
+                    # Estimate backward pass FLOPs (typically 2-3x forward pass)
+                    # Using 2x as a conservative estimate
+                    backward_tflops = 2 * step_tflops
+
+                    total_tflops += step_tflops + backward_tflops
+
                     nn.utils.clip_grad_norm_(
                         self.parameters(), 4.0
                     )
@@ -618,6 +675,9 @@ class RavelInterpretorHypernetwork(nn.Module):
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
                     self.opt.zero_grad()
+                    
+                    train_end = time.time()
+                    pure_train_time += train_end - train_start
                     
                     # TEST: orthogonalize the rotation matrix every step
                     """if self.use_das_intervention:
@@ -627,6 +687,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "step": cur_steps,
                         "train_batch_total_loss": training_loss.item(),
                         "train_batch_prediction_loss": prediction_loss.item(),
+                        "overhead/train_batch_tflops": backward_tflops + step_tflops,
+                        "overhead/train_batch_time": train_end - train_start,
+                        "overhead/train_cumulative_tflops": total_tflops,
+                        "overhead/train_cumulative_time": pure_train_time,
                     }
                     
                     if self.use_das_intervention:

@@ -10,8 +10,7 @@ nlprun_fast.py
 data/
 *.pdf
 *.out
-
-scripts/
+.DS_Store
 
 multirun/
 .env
