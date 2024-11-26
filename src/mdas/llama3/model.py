@@ -262,6 +262,7 @@ class RavelMDASNetwork(nn.Module):
                         source_intervention_position = torch.tensor([source_intervention_position] * batch["source_input_ids"].shape[0]).to("cuda")
                         
                     train_start = time.time()
+                    torch.cuda.synchronize()
                     
                     output = self.forward(
                         base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -317,6 +318,7 @@ class RavelMDASNetwork(nn.Module):
                     optimizer.step()
                     optimizer.zero_grad()
                     
+                    torch.cuda.synchronize() 
                     train_end = time.time()
 
                     

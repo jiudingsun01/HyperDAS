@@ -586,6 +586,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     num_datapoints_in_epoch += current_batch_size
                     
                     train_start = time.time()
+                    torch.cuda.synchronize()
 
                     prediction = self.forward(
                         editor_input_ids=batch["editor_input_ids"].to("cuda"),
@@ -675,7 +676,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
                     self.opt.zero_grad()
-                    
+                   
+                    torch.cuda.synchronize() 
                     train_end = time.time()
                     pure_train_time += train_end - train_start
                     
