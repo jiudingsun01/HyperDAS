@@ -313,7 +313,7 @@ class RavelMDASNetwork(nn.Module):
 
                     if wandb.run:
                         wandb.log(metrics)
-                    if cur_steps % 5 == 0:
+                    if cur_steps % 1 == 0:
                         print(metrics)
 
                     # Update progress bar

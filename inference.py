@@ -100,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/city_country_test")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/ICLR/verb_definition")
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "column_argmax", "bidding_argmax"])
     

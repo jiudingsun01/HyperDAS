@@ -16,6 +16,7 @@ def get_ravel_collate_fn(
     source_suffix_visibility=False,
     base_suffix_visibility=False,
     add_space_before_target=True,
+    include_template_type=False,
 ):
     
     """
@@ -131,6 +132,9 @@ def get_ravel_collate_fn(
         else:
             entities, counterfactual_entities = None, None
             
+        if include_template_type:
+            base_is_icl, source_is_icl = [], []
+            
         for b in batch:
             
             prefixes.append(b["input_prefix"])
@@ -144,6 +148,10 @@ def get_ravel_collate_fn(
             if contain_entity_position:
                 entities.append(b["entity"])
                 counterfactual_entities.append(b["counterfactual_entity"])
+                
+            if include_template_type:
+                base_is_icl.append(b["base_template_type"] == "icl")
+                source_is_icl.append(b["source_template_type"] == "icl")
             
         editor_input_ids = tokenizer(edit_instructions, return_tensors="pt", padding=True, truncation=True)["input_ids"]
         is_causal = torch.tensor([b["attribute_type"] == "causal" for b in batch])
@@ -152,6 +160,10 @@ def get_ravel_collate_fn(
             "is_causal": is_causal,
             **tokenize_text_inputs(prefixes, suffixes, counterfactual_prefixes, counterfactual_suffixes, targets, entities=entities, counterfactual_entities=counterfactual_entities),
         }
+        
+        if include_template_type:
+            returned_dict["base_is_icl"] = torch.tensor(base_is_icl)
+            returned_dict["source_is_icl"] = torch.tensor(source_is_icl)
         
         return returned_dict
     
@@ -208,7 +220,8 @@ def generate_ravel_dataset(
     target_attributes=["Country"],
     template_split="train",
     entity_split="train",
-    use_wikipedia_template=True
+    use_wikipedia_template=True,
+    include_template_type=True,
 ):
     
     def split_into_prefix_suffix(text, entity):
@@ -235,6 +248,9 @@ def generate_ravel_dataset(
     entities = json.load(open(os.path.join(root_path, f"ravel_{domain}_entity_attributes.json"), "r"))
     templates_split = json.load(open(os.path.join(root_path, f"ravel_{domain}_prompt_to_split.json"), "r"))
     templates = json.load(open(os.path.join(root_path, f"ravel_{domain}_attribute_to_prompts.json"), "r"))
+    
+    if include_template_type:
+        templates_type = json.load(open(os.path.join(root_path, f"ravel_{domain}_prompt_to_ICL.json"), "r"))
     
     all_attributes = [k for k in templates.keys()]
     
@@ -327,9 +343,18 @@ def generate_ravel_dataset(
                 "verify_text": verify_text
             }
             
+            if include_template_type:
+                data["base_template_type"] = "icl" if templates_type[base_template] else "normal"
+                if source_template_attribute == "wikipedia":
+                    data["source_template_type"] = "wikipedia"
+                else:
+                    data["source_template_type"] = "icl" if templates_type[source_template] else "normal"
+            
             dataset.append(data)
     
     for isolate_attribute in isolate_attributes:
+        
+        all_other_attributes = [k for k in target_attributes if k != isolate_attribute]
         
         for _ in range(sample_per_isolate_attributes):
                         
@@ -359,13 +384,13 @@ def generate_ravel_dataset(
             
             input_prefix, input_suffix = split_into_prefix_suffix(input_text, base_entity)
             counterfactual_input_prefix, counterfactual_input_suffix = split_into_prefix_suffix(source_text, source_entity)
-            
+                    
             data = {
                 "input_prefix": input_prefix,
                 "input_suffix": input_suffix,
                 "counterfactual_input_prefix": counterfactual_input_prefix,
                 "counterfactual_input_suffix": counterfactual_input_suffix,
-                "edit_instruction": f"{base_entity} ; {source_entity} - {random.choice(target_attributes)}",
+                "edit_instruction": f"{base_entity} ; {source_entity} - {random.choice(all_other_attributes)}",
                 "entity": base_entity,
                 "counterfactual_entity": source_entity,
                 "target": entity_dict[base_entity][isolate_attribute],
@@ -375,6 +400,13 @@ def generate_ravel_dataset(
                 "attribute": isolate_attribute,
                 "verify_text": verify_text
             }
+            
+            if include_template_type:
+                data["base_template_type"] = "icl" if templates_type[base_template] else "normal"
+                if source_template_attribute == "wikipedia":
+                    data["source_template_type"] = "wikipedia"
+                else:
+                    data["source_template_type"] = "icl" if templates_type[source_template] else "normal"
             
             dataset.append(data)
             
