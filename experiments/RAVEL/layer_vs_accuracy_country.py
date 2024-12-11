@@ -31,14 +31,14 @@ if __name__ == "__main__":
             source_selection_sparsity_loss=True,
             save_dir=None,
             das_dimension=128,
-            n_epochs=10,
-            lr=3e-5,
+            n_epochs=3,
+            lr=4e-5,
             weight_decay=0.01,
-            eval_per_steps=100,
+            eval_per_steps=None,
             checkpoint_per_steps=None,
-            test_path="../../experiments/ravel/data/ravel_city_Country_test",
-            train_path="../../experiments/ravel/data/ravel_city_Country_train",
-            causal_loss_weight=10
+            test_path="../../experiments/ravel/data/city_test",
+            train_path="../../experiments/ravel/data/city_train",
+            causal_loss_weight=3.5
         )
         
         

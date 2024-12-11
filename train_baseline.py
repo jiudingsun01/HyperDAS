@@ -119,8 +119,8 @@ if __name__ == "__main__":
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_dir", type=str, default="./experiments")
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/verb_definition_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/verb_definition_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     parser.add_argument("--causal_loss_weight", type=float, default=7.5)
     
     parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_entity_token")
