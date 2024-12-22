@@ -1,0 +1,10 @@
+defaults:
+  - base
+  - _self_
+
+name_or_path: "llamafactory/tiny-random-Llama-3"
+intervention_layer: 1
+das_dimension: 32
+num_editing_heads: 32
+num_decoders: 8
+chop_editor_at_layer: 2  # Make sure it's also here

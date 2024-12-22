@@ -1,7 +1,7 @@
-from cgi import test
 import json
 import os
 import warnings
+from cgi import test
 from math import ceil
 from typing import Dict, List, Optional
 
@@ -10,11 +10,11 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+import wandb
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
@@ -29,6 +29,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         super().__init__()
 
         self.config = config
+        self.device = device
         self.interpretor_config: LlamaInterpretorConfig = (
             LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
         )
@@ -225,7 +226,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 len(batch["editor_input_ids"]),
                 batch["source_input_ids"].shape[1] + 1,
                 batch["base_input_ids"].shape[1],
-            ).to("cuda")
+            ).to(self.device)
             intervention_weight[:, -1, :] = 1.0
 
             for i in range(len(batch["base_entity_position_ids"])):
@@ -241,14 +242,16 @@ class RavelInterpretorHypernetwork(nn.Module):
 
         with torch.no_grad():
             predictions = self.forward(
-                editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                base_input_ids=batch["base_input_ids"].to("cuda"),
-                base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                source_input_ids=batch["source_input_ids"].to("cuda"),
-                source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
-                labels=batch["labels"].to("cuda"),
+                editor_input_ids=batch["editor_input_ids"].to(self.device),
+                base_input_ids=batch["base_input_ids"].to(self.device),
+                base_attention_mask=batch["base_attention_mask"].to(self.device),
+                base_intervention_mask=batch["base_intervention_mask"].to(self.device),
+                source_input_ids=batch["source_input_ids"].to(self.device),
+                source_attention_mask=batch["source_attention_mask"].to(self.device),
+                source_intervention_mask=batch["source_intervention_mask"].to(
+                    self.device
+                ),
+                labels=batch["labels"].to(self.device),
                 output_intervention_weight=True,
                 inference_mode=inference_mode,
                 intervention_weight=intervention_weight,
@@ -263,7 +266,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             correct = 0
 
             for i, (label, pred_ids) in enumerate(
-                zip(batch["labels"].to("cuda"), batch_pred_ids)
+                zip(batch["labels"].to(self.device), batch_pred_ids)
             ):
                 label_idx = label != -100
                 output_idx = torch.zeros_like(label_idx)
@@ -529,7 +532,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 else len(test_loader.data_loader),
             ):
                 # Move entire batch to GPU once
-                batch = {k: v.to("cuda") for k, v in batch.items()}
+                batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 if inference_mode == "groundtruth":
                     intervention_weight = torch.zeros(
@@ -573,7 +576,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
 
                 for i, (label, pred_ids) in enumerate(
-                    zip(batch["labels"].to("cuda"), batch_pred_ids)
+                    zip(batch["labels"].to(self.device), batch_pred_ids)
                 ):
                     label_idx = label != -100
                     output_idx = torch.zeros_like(label_idx)
@@ -770,7 +773,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     total_steps + 1,
                 )
                 .to(self.interpretor_config.torch_dtype)
-                .to("cuda")
+                .to(self.device)
             )
             self.interpretor.das_module.set_temperature(
                 das_temperature_schedule[cur_steps]
@@ -787,7 +790,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     total_steps + 1,
                 )
                 .to(self.interpretor_config.torch_dtype)
-                .to("cuda")
+                .to(self.device)
             )
             sparsity_loss_schedule[:warm_up_steps] = 0.0
 
@@ -877,7 +880,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     num_datapoints_in_epoch += current_batch_size
 
                     # Move all batch items to device
-                    batch = {k: v.to("cuda") for k, v in batch.items()}
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
 
                     if not debug_model:
                         if all(

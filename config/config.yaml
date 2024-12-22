@@ -13,3 +13,4 @@ defaults:
 # Only keep other parameters here
 load_trained_from: null
 target_intervention_num: null
+device_mode: cuda

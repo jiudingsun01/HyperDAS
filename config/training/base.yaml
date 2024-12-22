@@ -6,7 +6,7 @@ lr: 1e-4
 eval_per_steps: 100
 checkpoint_per_steps: null
 max_eval_steps: -1
-num_workers: 4
+num_workers: 0
 seed: 42
 save_dir: "assets/checkpoints"
 compute_metrics: true
