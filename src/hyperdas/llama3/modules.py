@@ -31,6 +31,9 @@ from ..das_utils import (
     ReflectiveLowRankRotatedSpaceIntervention,
     QuasiProjectiveIntervention
 )
+
+from ..utils import InterventionModuleOutput
+
 from tqdm import tqdm
 from torch import optim
 import matplotlib.pyplot as plt
@@ -380,7 +383,7 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         )
         
         hidden_states, base_hidden_states, source_hidden_states = transformer_outputs[0], transformer_outputs[1], transformer_outputs[2]
-
+        
         # Set device for model parallelism
         if self.model_parallel:
             torch.cuda.set_device(self.transformer.first_device)
@@ -406,6 +409,8 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 
         # (output, present[,attentions])
         return hidden_states, source_attn_weight, base_attn_weight
+        # return base_hidden_states, source_attn_weight, base_attn_weight
+        
 
 
 class LlamaInterpretor(nn.Module):
@@ -443,15 +448,21 @@ class LlamaInterpretor(nn.Module):
                 )
             elif subspace_module == "QuasiProjective":
                 self.das_module = QuasiProjectiveIntervention(
-                    embed_dim=self.target_model.config.hidden_size, 
+                    embed_dim=self.target_model.config.hidden_size,
+                    # dict_size=128,
                     dict_size=das_dimension,
-                    scoring_dimension=8,
+                    scoring_dimension=32,
                     top_k_parameter=das_dimension,
-                    lambda_parameter=10,
-                    selection_mechanism="dynamic",
-                    return_penalty_weight=False,
+                    lambda_parameter=0.001,
+                    importance_power=-2,
+                    epsilon=0.000001,
+                    return_penalty=True,
+                    ridge_parameterization=None,
+                    torch_dtype=config.torch_dtype,
+                    compute_metrics=True,
                     orthogonal_init=True,
-                    torch_dtype=config.torch_dtype
+                    selection_mechanism="dynamic",
+                    hat_matrix=True,
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -537,7 +548,6 @@ class LlamaInterpretor(nn.Module):
         source_hidden_states: torch.Tensor = None,
         source_position_ids: torch.Tensor = None,
         intervention_layer: int = None,
-        output_intervention_weight: bool = True,
         source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
     ) -> InterpretorModelOutput:        
@@ -650,15 +660,17 @@ class LlamaInterpretor(nn.Module):
             
             
         # Multiply the outputs by normalization factors
-        hypernet_hidden_states, source_intervention_weight, base_intervention_weight = interpretor_output
+        if source_intervention_weight is None:
+            source_intervention_weight = interpretor_output[1]
+        else:
+            source_intervention_weight = source_intervention_weight.to(interpretor_output[1].dtype)
         
-        # source_intervention_weight[0, :] = 0.0
-        # source_intervention_weight[0, 6] = 1.0
-        
-        # base_intervention_weight[0, :] = 0.0
-        # base_intervention_weight[0, 18] = 1.0
-        
-        # print(source_intervention_weight[0])
+        if base_intervention_weight is None:
+            base_intervention_weight = interpretor_output[2]
+        else:
+            base_intervention_weight = base_intervention_weight.to(interpretor_output[2].dtype)
+            
+        hypernet_hidden_states = interpretor_output[0]
                         
         source_output = self.target_model(
             input_ids=source_input_ids,
@@ -705,6 +717,9 @@ class LlamaInterpretor(nn.Module):
                     mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, batch_size)
                 
                 # print(mixed_output - base_hidden_states)
+                
+                if isinstance(mixed_output, InterventionModuleOutput):
+                    mixed_output = mixed_output.mixed_output
                 
                 output[0][:] += (mixed_output - base_hidden_states)    
             else:

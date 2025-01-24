@@ -88,13 +88,13 @@ class RavelInterpretorHypernetwork(nn.Module):
         source_attention_mask: torch.Tensor = None,
         source_intervention_mask: torch.Tensor = None,
         labels: torch.Tensor = None,
-        output_intervention_weight: bool = True,
         is_causal: torch.Tensor = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
         source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
     ):
+        
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
             editor_attention_mask=editor_input_ids != self.interpretor_config.eos_token_id,
@@ -104,9 +104,8 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_input_ids=source_input_ids,
             source_attention_mask=source_attention_mask,
             source_intervention_mask=source_intervention_mask,
-            output_intervention_weight=output_intervention_weight,
             source_intervention_weight=source_intervention_weight,
-            base_intervention_weight=base_intervention_weight
+            base_intervention_weight=base_intervention_weight,
         )
         
         if labels is not None:
@@ -173,7 +172,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                 source_attention_mask=batch["source_attention_mask"].to("cuda"),
                 source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                 labels=batch["labels"].to("cuda"),
-                output_intervention_weight=True,
             )    
             
             batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
@@ -351,7 +349,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         return fig, axes
         
         
-    def eval_accuracy(self, test_loader, eval_n_label_tokens=None):
+    def eval_accuracy(self, test_loader, eval_n_label_tokens=None, debug_mode=None):
         
         self.interpretor.eval()
         test_loss = []
@@ -362,6 +360,27 @@ class RavelInterpretorHypernetwork(nn.Module):
             for batch_id, batch in tqdm(
                 enumerate(test_loader), desc="Evaluating", total=len(test_loader)
             ):         
+                
+                source_intervention_weight = None
+                base_intervention_weight = None
+                
+                if debug_mode is not None:
+                    if debug_mode == "last_token":
+                        source_intervention_weight = torch.zeros_like(batch["source_intervention_mask"])
+                        source_intervention_weight[:, -1] = 1.0
+                    
+                        base_last_token_idxs = torch.sum(batch["labels"] == -100, dim=-1) - 1
+                        base_intervention_weight = torch.functional.F.one_hot(base_last_token_idxs, num_classes=batch["base_intervention_mask"].shape[-1])
+
+                    elif debug_mode == "last_entity_token":
+                        source_intervention_weight = torch.functional.F.one_hot(batch["source_entity_position_ids"], num_classes=batch["source_intervention_mask"].shape[-1])
+                        base_intervention_weight = torch.functional.F.one_hot(batch["base_entity_position_ids"], num_classes=batch["base_intervention_mask"].shape[-1])
+                    
+                    source_intervention_weight = source_intervention_weight.float().to("cuda")
+                    base_intervention_weight = base_intervention_weight.float().to("cuda")
+                        
+                
+                
                 predictions = self.forward(
                     editor_input_ids=batch["editor_input_ids"].to("cuda"),
                     base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -371,7 +390,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                     source_attention_mask=batch["source_attention_mask"].to("cuda"),
                     source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                     labels=batch["labels"].to("cuda"),
+                    source_intervention_weight=source_intervention_weight,
+                    base_intervention_weight=base_intervention_weight,
                 )
+                
+                
                 
                 test_loss.append(predictions["loss"].item())
                 """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
@@ -439,10 +462,14 @@ class RavelInterpretorHypernetwork(nn.Module):
         save_model=False,
         sparsity_loss=True,
         sparsity_loss_weight=1.0,
+        debug_mode=None,
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
             os.makedirs(save_dir)
+            
+        if debug_mode is not None:
+            assert debug_mode in ["last_token", "last_entity_token"]
             
         trainable_parameters = []
         for name, param in self.named_parameters():
@@ -488,9 +515,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                             # Evaluate the model
                             
                             accuracies, test_loss, _ = self.eval_accuracy(
-                                test_loader, eval_n_label_tokens=3
+                                test_loader, eval_n_label_tokens=3, debug_mode=debug_mode
                             )
-                                
                                 
                             causal_acc = accuracies["causal"]
                             isolate_acc = accuracies["isolate"]
@@ -517,6 +543,26 @@ class RavelInterpretorHypernetwork(nn.Module):
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
                     
+                    source_intervention_weight = None
+                    base_intervention_weight = None
+                    
+                    if debug_mode is not None:
+                        if debug_mode == "last_token":
+                            source_intervention_weight = torch.zeros_like(batch["source_intervention_mask"])
+                            source_intervention_weight[:, -1] = 1.0
+                                         
+                            base_last_token_idxs = torch.sum(batch["labels"] == -100, dim=-1) - 1
+                            base_intervention_weight = torch.functional.F.one_hot(base_last_token_idxs, num_classes=batch["base_intervention_mask"].shape[-1])
+
+                                                
+                        elif debug_mode == "last_entity_token":
+                            source_intervention_weight = torch.functional.F.one_hot(batch["source_entity_position_ids"], num_classes=batch["source_intervention_mask"].shape[-1])
+                            base_intervention_weight = torch.functional.F.one_hot(batch["base_entity_position_ids"], num_classes=batch["base_intervention_mask"].shape[-1])
+                            
+                        source_intervention_weight = source_intervention_weight.float().to("cuda")
+                        base_intervention_weight = base_intervention_weight.float().to("cuda")
+                        
+                    
                     prediction = self.forward(
                         editor_input_ids=batch["editor_input_ids"].to("cuda"),
                         base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -529,7 +575,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         is_causal=batch["is_causal"].to("cuda"),
                         causal_loss_weight=causal_loss_weight,
                         iso_loss_weight=iso_loss_weight,
-                        output_intervention_weight=True,
+                        source_intervention_weight=source_intervention_weight,
+                        base_intervention_weight=base_intervention_weight,
                     )
                     
                     training_loss = 0
@@ -605,7 +652,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     )
                     
         result_dict = {}
-        accs, test_loss, correct_indices = self.eval_accuracy(test_loader, eval_n_label_tokens=3)
+        accs, test_loss, correct_indices = self.eval_accuracy(test_loader, eval_n_label_tokens=3, debug_mode=debug_mode)
         result_dict = {
             "accs": accs,
             "test_loss": test_loss,

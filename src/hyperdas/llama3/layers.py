@@ -178,7 +178,6 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         self.cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.cross_attn_mlp = LlamaMLP(config)
         self.post_cross_attn_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        
 
     def forward(
         self,
@@ -284,7 +283,6 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             base_hidden_states = self.cross_attn_mlp(base_hidden_states)
             base_hidden_states = base_residual + base_hidden_states
             
-           
         # Fully Connected
         residual = hidden_states
         

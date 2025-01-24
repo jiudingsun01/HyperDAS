@@ -108,6 +108,20 @@ class RavelMDASNetwork(nn.Module):
                     
                     base_intervention_position = torch.tensor([base_intervention_position] * batch["base_input_ids"].shape[0]).to("cuda")
                     source_intervention_position = torch.tensor([source_intervention_position] * batch["source_input_ids"].shape[0]).to("cuda")
+                    
+                    base_labels_length = torch.sum(batch["labels"] != -100, dim=1).to("cuda")
+                    # source_labels_length = torch.sum(batch["source_input_ids"] != -100, dim=1).to("cuda")
+                                        
+                    base_intervention_position = base_intervention_position - base_labels_length
+                    # source_intervention_position = source_intervention_position - source_labels_length
+                    
+                    """x = 2
+                    print(batch["labels"][x])
+                    print(base_intervention_position[x])
+                    print(batch["base_attention_mask"][x])
+                    print(batch["base_input_ids"][x])
+                    print(batch["base_input_ids"][x][base_intervention_position[x]])
+                    raise"""
                 
                 output = self.forward(
                     base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -246,6 +260,11 @@ class RavelMDASNetwork(nn.Module):
                         
                         base_intervention_position = torch.tensor([base_intervention_position] * batch["base_input_ids"].shape[0]).to("cuda")
                         source_intervention_position = torch.tensor([source_intervention_position] * batch["source_input_ids"].shape[0]).to("cuda")
+                        
+                        base_labels_length = torch.sum(batch["labels"] != -100, dim=1).to("cuda")
+                        # source_labels_length = torch.sum(batch["source_input_ids"] != -100, dim=1).to("cuda")
+                                            
+                        base_intervention_position = base_intervention_position - base_labels_length
                     
                     output = self.forward(
                         base_input_ids=batch["base_input_ids"].to("cuda"),

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+from collections import namedtuple
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 from transformers import PretrainedConfig
-from transformers.modeling_outputs import BaseModelOutput
+from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 
 
 def rotate_half(x):
@@ -68,6 +69,13 @@ class InterpretorModelOutput(BaseModelOutput):
     source_intervention_weight: Optional[torch.Tensor] = None
     base_intervention_weight: Optional[torch.Tensor] = None
     loss: Optional[torch.Tensor] = None
+    
+@dataclass
+class InterventionModuleOutput(ModelOutput):
+    mixed_output: torch.Tensor = None
+    metrics: Dict[str, Any] = None
+    basis: torch.Tensor = None
+
 
 
 @contextlib.contextmanager

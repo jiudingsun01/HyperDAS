@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from typing import Any, Dict, Literal, Mapping, Tuple
 
+from src.hyperdas.utils import InterventionModuleOutput
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,6 +32,7 @@ class Intervention(nn.Module):
         super().__init__()
         self.trainable = False
         self.is_source_constant = False
+        self.compute_metrics = kwargs.get("compute_metrics", False)
 
         self.keep_last_dim = kwargs["keep_last_dim"] if "keep_last_dim" in kwargs else False
         self.use_fast = kwargs["use_fast"] if "use_fast" in kwargs else False
@@ -171,6 +173,42 @@ def compute_rotation_mask_sparsity(subspace_proj):
     """
     rotation_mask = get_rotation_mask(subspace_proj)
     return (rotation_mask.sum() / rotation_mask.numel()).item()
+
+
+class ChunkedHypernetwork(nn.Module):
+    def __init__(
+        self,
+        input_dim,
+        num_chunks,
+        intermediate_dim,
+        output_dim,
+        num_heads=4,
+        orthogonal_init=False,
+    ):
+        super().__init__()
+        self.intermediate_dim = intermediate_dim
+        self.output_dim = output_dim
+        self.proj = nn.ModuleList(
+            [
+                nn.Linear(
+                    input_dim, intermediate_dim * output_dim // num_chunks, bias=True
+                )
+                for _ in range(num_chunks)
+            ]
+        )
+        self.gate = nn.Linear(input_dim, num_chunks)
+
+        if orthogonal_init:
+            for proj in self.proj:
+                torch.nn.init.orthogonal_(proj.weight)
+
+    def forward(self, x):
+        projections = [proj(x) for proj in self.proj]
+        # shape (batch_size, num_chunks, output_dim * intermediate_dim // num_chunks)
+        out = torch.stack(projections, dim=1)
+        out = out * F.sigmoid(self.gate(x)).unsqueeze(-1)
+        return out
+    
 
 # from pyvene https://github.com/stanfordnlp/pyvene/blob/main/pyvene/models/interventions.py#L298
 class BoundlessRotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
@@ -520,9 +558,12 @@ class QuasiProjectiveIntervention(
         ridge_parameterization: Literal[
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
-        selection_mechanism: Literal["full", "topk", "dynamic"] = "full",
+        selection_mechanism: Literal[
+            "full", "topk", "dynamic", "dynamic_attn"
+        ] = "full",
         scoring_dimension: int = 1,
         orthogonal_init=False,
+        hat_matrix=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -530,6 +571,7 @@ class QuasiProjectiveIntervention(
         self.dict_size = dict_size
         self.top_k_parameter = top_k_parameter
         self.scoring_dimension = scoring_dimension
+        self.hat_matrix = hat_matrix
 
         # note: you could technically set top_k_parameter equal to full dictionary, it'd just be more expensive computationally
         # and you might want more fall-off
@@ -554,7 +596,7 @@ class QuasiProjectiveIntervention(
             nn.Linear(
                 in_features=embed_dim,
                 out_features=scoring_dimension
-                if selection_mechanism == "dynamic"
+                if "dynamic" in selection_mechanism
                 else dict_size,
                 bias=True,
             ).to(dtype=torch_dtype),
@@ -566,18 +608,32 @@ class QuasiProjectiveIntervention(
             self.dictionary = nn.Embedding(
                 num_embeddings=dict_size, embedding_dim=embed_dim
             )
-        else:
+        elif selection_mechanism == "dynamic_attn":
+            self.dictionary = ChunkedHypernetwork(
+                scoring_dimension,
+                dict_size,
+                dict_size,
+                embed_dim,
+                orthogonal_init=orthogonal_init,
+            )
+        elif selection_mechanism == "dynamic":
             self.dictionary = nn.Linear(
                 scoring_dimension, dict_size * embed_dim, bias=False
             )
-        if orthogonal_init:
-            torch.nn.init.orthogonal_(self.dictionary.weight)
+            if orthogonal_init:
+                torch.nn.init.orthogonal_(self.dictionary.weight)
 
         self.dictionary = self.dictionary.to(dtype=torch_dtype)
 
         self.penalty = None
 
         self.input_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
+            dtype=torch_dtype
+        )
+        self.base_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
+            dtype=torch_dtype
+        )
+        self.source_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
             dtype=torch_dtype
         )
 
@@ -709,10 +765,11 @@ class QuasiProjectiveIntervention(
         XTX = torch.matmul(
             X, X.transpose(-2, -1)
         )  # XTX: (batch x num_active_features x d_embed) * (batch x d_embed x num_active_features)
-        XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
+        if not self.hat_matrix:
+            XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
         if (
-            self.selection_mechanism == "dynamic"
+            "dynamic" in self.selection_mechanism
             or self.ridge_parameterization == "topk_ste"
         ):
             # Unmodified ridge formulation
@@ -728,9 +785,9 @@ class QuasiProjectiveIntervention(
 
         # Cast regularized_XTX and XTY to float32
         regularized_XTX = regularized_XTX.to(torch.float32)
-        XTY = XTY.to(torch.float32)
+        if not self.hat_matrix:
+            XTY = XTY.to(torch.float32)
 
-        # Solve the system
         def solve_single(A, b):
             # Compute Cholesky decomposition
             L = torch.linalg.cholesky(A)
@@ -742,10 +799,17 @@ class QuasiProjectiveIntervention(
 
             return x
 
-        ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XTY)
+        if self.hat_matrix:
+            # Solve for beta' instead of beta to compute df
+            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, X)
+        else:
+            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(
+                regularized_XTX, XTY
+            )
 
-        # if self.compute_metrics and self.training:
-        if False:
+        ridge_coeffs = ridge_coeffs.to(X.dtype)
+
+        if self.compute_metrics and self.training:
             if denominator_scores is not None:
                 # Compute mean, min, max of the denominator score vector
                 metrics["denominator_scores_mean"] = denominator_scores.mean().item()
@@ -755,15 +819,24 @@ class QuasiProjectiveIntervention(
                 importance_scores.norm(dim=-1).mean().item()
             )
 
-        # Cast ridge_coeffs back to the original dtype
-        ridge_coeffs = ridge_coeffs.to(X.dtype)
+            # effective dimensionality from sum(trace(eig(H))^2 / (trace(eig(H))^2 + lambda))
+            # for regression hat matrix H
+            if self.hat_matrix:
+                hat_matrix = torch.bmm(X, ridge_coeffs.transpose(-2, -1))
+                trace_matrix = hat_matrix.diagonal(offset=0, dim1=-1, dim2=-2)
+                with torch.no_grad():
+                    metrics["effective_dim"] = trace_matrix.sum(-1).mean().item()
+
+        if self.hat_matrix:
+            # beta = beta' @ Y
+            ridge_coeffs = torch.bmm(ridge_coeffs, Y.transpose(-2, -1))
 
         # Multiply thru by X
         predictions = torch.matmul(ridge_coeffs.transpose(-2, -1), X)
 
         return predictions, metrics
 
-    def forward(self, base, source, hidden_states):
+    def forward(self, base, source, hidden_states, return_basis=False):
         metrics = {}
         # Base:     batch x seq x d_embed
         # Source:   batch x seq x d_embed
@@ -774,6 +847,10 @@ class QuasiProjectiveIntervention(
         dictionary_encodings = self.edit_instruction_encodings(
             normalized_hidden_state
         )  # dictionary_encodings: batch x (d_embed or scoring_dimension)
+
+        # Normalize base and source prior to regression
+        normalized_base = self.base_layernorm(base)
+        normalized_source = self.source_layernorm(source)
 
         # Perform top-k index selection
         # top_k_indices: batch x k; top_k_values: batch x k
@@ -787,7 +864,7 @@ class QuasiProjectiveIntervention(
                     dictionary_encodings, self.top_k_parameter, dim=-1
                 )
         elif (
-            self.selection_mechanism == "full" or self.selection_mechanism == "dynamic"
+            self.selection_mechanism == "full" or "dynamic" in self.selection_mechanism
         ):
             top_k_values = dictionary_encodings
 
@@ -805,28 +882,27 @@ class QuasiProjectiveIntervention(
                 .unsqueeze(0)
                 .repeat(base.shape[0], 1)
             )
-        elif self.selection_mechanism == "dynamic":
+        elif "dynamic" in self.selection_mechanism:
             selected_dictionary = self.dictionary(top_k_values).reshape(
                 -1, self.dict_size, self.embed_dim
             )
 
         base_interchange, base_metrics = self.compute_closeform_ridge(
             selected_dictionary,
-            base,
+            normalized_base,
             top_k_values,
             importance_power=self.importance_power,
         )
         source_interchange, source_metrics = self.compute_closeform_ridge(
             selected_dictionary,
-            source,
+            normalized_source,
             top_k_values,
             importance_power=self.importance_power,
         )
 
         output = base + (source_interchange - base_interchange)
 
-        # if self.compute_metrics and self.training:
-        if False:
+        if self.compute_metrics and self.training:
             metrics.update({f"source_{k}": v for k, v in source_metrics.items()})
             metrics.update({f"base_{k}": v for k, v in base_metrics.items()})
 
@@ -837,8 +913,13 @@ class QuasiProjectiveIntervention(
                     (source_interchange - base_interchange).norm().item()
                 )
                 metrics["dictionary_norm"] = top_k_values.norm().item()
-                metrics["selected_dictionary_nn_l0"] = (
-                    (selected_dictionary > 0).float().sum(1).mean().item()
+
+                # Plot rank of generated basis
+                metrics["basis_rank"] = (
+                    torch.linalg.matrix_rank(selected_dictionary.float())
+                    .float()
+                    .mean()
+                    .item()
                 )
 
                 # Intervention Directional Change
@@ -879,7 +960,12 @@ class QuasiProjectiveIntervention(
         # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
         # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange
         # (check this! as a sanity-check!)
-        return output.to(base.dtype) #, metrics
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype), metrics=metrics
+        )
+        if return_basis:
+            out.basis = selected_dictionary.to(base.dtype)
+        return out
 
     def __str__(self):
         return f"QuasiProjectedIntervention(top_k={self.top_k_parameter}, importance_power={self.importance_power}, lambda_parameter={self.lambda_parameter}, return_penalty={self.return_penalty})"
