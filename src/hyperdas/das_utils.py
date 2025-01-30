@@ -411,8 +411,8 @@ class ReflectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribut
     def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.bfloat16, save_vector=False, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         
         self.rv_proj = HiddenStatesProjectionMLP(
             in_size=self.embed_dim, 
