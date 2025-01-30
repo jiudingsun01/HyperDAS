@@ -1041,6 +1041,7 @@ class HyperDAS(nn.Module):
         output_intervention_weight: bool = True,
         intervention_weight: torch.Tensor = None,
         inference_mode: str = None,
+        use_target_model_embedding: bool = True,
     ) -> InterpretorModelOutput:
         
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
@@ -1122,9 +1123,19 @@ class HyperDAS(nn.Module):
                 source_intervention_mask.shape[0],
                 source_intervention_mask.shape[1] * n_layer,
             )
+            
+            if use_target_model_embedding:
+                """inputs_embeds = self._run_target_model_for_encoded_hidden_states(
+                    editor_input_ids, target_attention_mask=editor_attention_mask
+                )"""
+                inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
+                editor_input_ids = None
+            else:
+                inputs_embeds = None
 
             interpretor_output = self.hypernetwork(
                 input_ids=editor_input_ids,
+                inputs_embeds=inputs_embeds,
                 attention_mask=editor_attention_mask,
                 base_hidden_states=collapsed_base_hidden_states,
                 base_attention_mask=collapsed_base_attention_mask,

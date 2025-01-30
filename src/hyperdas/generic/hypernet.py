@@ -228,6 +228,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                     self.tokenizer.decode(pred_ids, skip_special_tokens=True)
                 )
                 
+                print("Label: ", self.tokenizer.decode(label, skip_special_tokens=True))
+                print("Prediction: ", self.tokenizer.decode(pred_ids, skip_special_tokens=True))
+                print()
+                
                 is_correct = torch.sum(label == pred_ids) == torch.numel(label)
                 
                 if is_correct:

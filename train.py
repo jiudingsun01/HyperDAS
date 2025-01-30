@@ -163,9 +163,9 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=1)
+    parser.add_argument("--n_epochs", type=int, default=5)
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/cache/hub/models--google--gemma-2-9b-it/snapshots/11c9b309abf73637e4b6f9a3fa1e92e615547819")
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     
     # Ablation
     parser.add_argument("--num_decoders", type=int, default=4)
-    parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
+    parser.add_argument("--initialize_from_scratch", default=True)
     parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
     parser.add_argument("--break_asymmetric", default=False, action="store_true")
