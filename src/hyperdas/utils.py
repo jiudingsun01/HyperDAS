@@ -102,6 +102,4 @@ def assign_layer_indices(model):
         model.transformer.wte.layer_index = 0
         for i, layer in enumerate(model.transformer.h):
             layer.layer_index = i + 1
-    elif "llama" in model.config.name_or_path:
-        pass
     

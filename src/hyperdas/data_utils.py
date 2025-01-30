@@ -597,11 +597,12 @@ def filter_dataset(model, tokenizer, dataset, batch_size=16, eval_n_label_tokens
             
             prediction = model(**batch)            
             batch_pred_ids = torch.argmax(prediction["logits"], dim=-1)
-            
+        
             for i, (label, pred_ids) in enumerate(zip(batch["labels"], batch_pred_ids)):
                 label_idx = label != -100
                 output_idx = torch.zeros_like(label_idx)
                 output_idx[:-1] = label_idx[1:]
+                
                 
                 label = label[label_idx]
                 pred_ids = pred_ids[output_idx]
