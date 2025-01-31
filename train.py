@@ -16,8 +16,10 @@ from datasets import Dataset, load_from_disk
 from src.hyperdas.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
 import argparse
 
+from src.hyperdas.asymmetric.modules import HyperDASConfig, HyperDAS, HyperDASQuasiProjectiveConfig
 
-from transformers import AutoTokenizer
+
+from transformers import AutoTokenizer, AutoConfig
 
 
 def run_experiment(
@@ -47,12 +49,8 @@ def run_experiment(
     train_path=None,
     causal_loss_weight=1,
     iso_loss_weight=1,
-    num_decoders=8,
-    initialize_from_scratch=False,
-    ablate_base_token_attention=False,
-    ablate_source_token_attention=False,
     save_model=False,
-    break_asymmetric=False,
+    hyperdas_config: HyperDASConfig = None,
 ):
     
     """if save_dir is not None:
@@ -82,18 +80,16 @@ def run_experiment(
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
-
-    # tokenizer.padding_side = "left"
-    # tokenizer.pad_token = tokenizer.eos_token
-    # tokenizer.pad_token_id = tokenizer.eos_token_id
     
-    tokenizer.padding_side = "right"
+    if "llama" in model_name_or_path:
+        tokenizer.padding_side = "left"
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+    elif "gemma" in model_name_or_path:
+        tokenizer.padding_side = "right"
 
     train_set = load_from_disk(train_path)
     test_set = load_from_disk(test_path)
-    
-    # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
-    # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
                 
     collate_fn = get_ravel_collate_fn(
         tokenizer, 
@@ -110,8 +106,7 @@ def run_experiment(
         test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
 
-    # from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
-    from src.hyperdas.generic.hypernet import RavelInterpretorHypernetwork
+    from src.hyperdas.asymmetric.hypernet import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
         model_name_or_path=model_name_or_path,
@@ -119,11 +114,7 @@ def run_experiment(
         intervention_layer=intervention_layer,
         subspace_module=subspace_module,
         das_dimension=das_dimension,
-        chop_editor_at_layer=num_decoders,
-        initialize_from_scratch=initialize_from_scratch,
-        ablate_base_token_attention=ablate_base_token_attention,
-        ablate_source_token_attention=ablate_source_token_attention,
-        break_asymmetric=break_asymmetric
+        hyperdas_config=hyperdas_config,
     )
     hypernetwork = hypernetwork.to("cuda")
         
@@ -156,55 +147,97 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    
+    # Wadb Config
     parser.add_argument("--log_wandb", type=bool, default=False)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default="Sym-Full")
     parser.add_argument("--intervention_layer", type=int, default=15)
     
+    # HyperDAS Config
+    parser.add_argument('--subspace_module', default="QuasiProjective", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
+    parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--load_trained_from", type=str, default=None)
-    
-    parser.add_argument("--n_epochs", type=int, default=5)
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/cache/hub/models--google--gemma-2-9b-it/snapshots/11c9b309abf73637e4b6f9a3fa1e92e615547819")
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
-    parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
+    parser.add_argument("--num_decoders", type=int, default=4)
+    parser.add_argument("--initialize_from_pretrained", default=False, action="store_true")
     
+    # Training Config
+    parser.add_argument("--n_epochs", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/gemma2_data/city_country_test")
     parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/gemma2_data/city_country_train")
+    
+    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
+    parser.add_argument("--iso_loss_weight", type=float, default=0.5)
+    parser.add_argument("--save_model", default=False, action="store_true")
+    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/HyperDAS/RAVEL-Sym")
+    
+    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--eval_per_steps", type=int, default=500)
+    parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.5)
     parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.15)
     parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.5)
     
-    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
-    parser.add_argument("--iso_loss_weight", type=float, default=0.5)
+    # RAVEL Config
+    parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
+    parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/HyperDAS/RAVEL-Sym")
-    parser.add_argument("--save_model", default=False, action="store_true")
-        
+    # Asymmetric Implementation
     parser.add_argument('--inference_modes', nargs='+', default=["bidding_argmax"])
-    
-    # Ablation
-    parser.add_argument("--num_decoders", type=int, default=4)
-    parser.add_argument("--initialize_from_scratch", default=True)
     parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
     parser.add_argument("--break_asymmetric", default=False, action="store_true")
     
-    # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
-    parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=2e-4)
-    parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=500)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=None)
+    # QuasiProjective Config
+    parser.add_argument('--selection_mechanism', default="dynamic", choices=["dynamic", "topk", "full"])
+    parser.add_argument('--ridge_parameterization', default=None, choices=[None, "topk_ste"])
+    parser.add_argument("--dict_size", type=int, default=32)
+    parser.add_argument("--scoring_dimension", type=int, default=32)
+    parser.add_argument("--lambda_parameter", type=float, default=0.001)
+    parser.add_argument("--importance_power", type=int, default=-2)
+    parser.add_argument("--epsilon", type=float, default=0.000001)
+    parser.add_argument("--return_penalty", type=bool, default=True)
+    parser.add_argument("--compute_metrics", type=bool, default=True)
+    parser.add_argument("--orthogonal_init", type=bool, default=True)
+    parser.add_argument("--hat_matrix", type=bool, default=True)
     
     args = parser.parse_args()
     args = dict(args.__dict__)
     
+    if args.subspace_module == 'QuasiProjective':
+        hyperdas_config = HyperDASQuasiProjectiveConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+    else:
+        hyperdas_config = HyperDASConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+    
+    model_name_or_path = args.pop("model_name_or_path")
+    
+    model_config = AutoConfig.from_pretrained(model_name_or_path)
+
+    hyperdas_config.name_or_path = model_name_or_path
+    hyperdas_config.torch_dtype = args.pop("torch_dtype")
+    
+    hyperdas_config.hidden_size = model_config.hidden_size
+    hyperdas_config.intermediate_size = model_config.intermediate_size
+    hyperdas_config.vocab_size = model_config.vocab_size
+    hyperdas_config.target_model_num_hidden_layers = model_config.num_hidden_layers
+            
+    hyperdas_config.num_editing_heads = args.pop("num_editing_heads")
+    hyperdas_config.num_decoders = args.pop("num_decoders")
+    hyperdas_config.intervention_layer = args.pop("intervention_layer")
+    
+    hyperdas_config._attn_implementation = 'eager'
+    hyperdas_config.initialize_from_pretrained = args.pop("initialize_from_pretrained")
+    hyperdas_config.ablate_base_token_attention = args.pop("ablate_base_token_attention")
+    hyperdas_config.ablate_source_token_attention = args.pop("ablate_source_token_attention")
+    hyperdas_config.break_asymmetric = args.pop("break_asymmetric")
+        
     if not os.path.exists(args["save_dir"]):
         os.makedirs(args["save_dir"])
         
     json.dump(args, open(os.path.join(args["save_dir"], "config.json"), "w"))
-    run_experiment(**args)
+    run_experiment(**args, hyperdas_config=hyperdas_config)

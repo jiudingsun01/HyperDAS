@@ -1,5 +1,5 @@
 import torch
-from .modules import HyperDASConfig, HyperDAS
+from .modules import HyperDASConfig, HyperDAS, HyperDASQuasiProjectiveConfig
 from ..utils import InterpretorModelOutput
 from transformers import AutoTokenizer, AutoConfig
 import torch.nn as nn
@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import wandb
 import os
 from tqdm import tqdm
-import time
 import json
 import numpy as np
 
@@ -19,41 +18,13 @@ class RavelInterpretorHypernetwork(nn.Module):
     def __init__(
         self,
         model_name_or_path="/home/ubuntu/llama3-8b",
-        num_editing_heads=32,
-        chop_editor_at_layer=8,
-        intervention_layer=0,
         subspace_module="ReflectSelect",
-        torch_dtype=torch.bfloat16,
         das_dimension=None,
-        initialize_from_scratch=False,
-        ablate_base_token_attention=False,
-        ablate_source_token_attention=False,
-        break_asymmetric=False,
+        hyperdas_config: HyperDASConfig = None,
     ):
         super().__init__()
-
-        self.interpretor_config = HyperDASConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
         
-        model_config = AutoConfig.from_pretrained(model_name_or_path)
-        
-        
-        self.interpretor_config.name_or_path = model_name_or_path
-        self.interpretor_config.torch_dtype = torch_dtype
-        
-        self.interpretor_config.hidden_size = model_config.hidden_size
-        self.interpretor_config.intermediate_size = model_config.intermediate_size
-        self.interpretor_config.vocab_size = model_config.vocab_size
-        self.interpretor_config.target_model_num_hidden_layers = model_config.num_hidden_layers
-                
-        self.interpretor_config.num_editing_heads = num_editing_heads
-        self.interpretor_config.chop_editor_at_layer = chop_editor_at_layer
-        self.interpretor_config.intervention_layer = intervention_layer
-        
-        self.interpretor_config._attn_implementation = 'eager'
-        self.interpretor_config.initialize_from_scratch = initialize_from_scratch
-        self.interpretor_config.ablate_base_token_attention = ablate_base_token_attention
-        self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
-        self.interpretor_config.break_asymmetric = break_asymmetric
+        self.interpretor_config = hyperdas_config
         
         self.interpretor = HyperDAS(
             self.interpretor_config, 

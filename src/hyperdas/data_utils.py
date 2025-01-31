@@ -603,7 +603,6 @@ def filter_dataset(model, tokenizer, dataset, batch_size=16, eval_n_label_tokens
                 output_idx = torch.zeros_like(label_idx)
                 output_idx[:-1] = label_idx[1:]
                 
-                
                 label = label[label_idx]
                 pred_ids = pred_ids[output_idx]
                 
