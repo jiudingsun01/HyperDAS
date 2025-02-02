@@ -239,7 +239,7 @@ class HyperDASForTokenSelection(LlamaForCausalLM):
         
         if config.initialize_from_pretrained:
             self.model = HyperDASModel.from_pretrained(
-                config.name_or_path, torch_dtype = config.torch_dtype
+                config.target_model_name_or_path, torch_dtype = config.torch_dtype
             )
         else:
             self.model = HyperDASModel(config=config)

@@ -151,9 +151,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     # Wadb Config
-    parser.add_argument("--log_wandb", type=bool, default=False)
+    parser.add_argument("--log_wandb", type=bool, default=True)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
-    parser.add_argument("--wandb_run_name", type=str, default="Sym-Full")
+    parser.add_argument("--wandb_run_name", type=str, default="New-Code-Test")
     parser.add_argument("--intervention_layer", type=int, default=15)
     
     # HyperDAS Config
@@ -165,23 +165,23 @@ if __name__ == "__main__":
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--num_decoders", type=int, default=4)
     parser.add_argument("--num_editing_heads", type=int, default=32)
-    parser.add_argument("--initialize_from_pretrained", default=False, action="store_true")
+    parser.add_argument("--initialize_from_pretrained", default=True)
     
     # Training Config
-    parser.add_argument("--n_epochs", type=int, default=5)
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--n_epochs", type=int, default=3)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
     parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=0.5)
     parser.add_argument("--save_model", default=False, action="store_true")
-    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/HyperDAS/RAVEL-Sym")
+    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/HyperDAS/unit_test")
     
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--eval_per_steps", type=int, default=500)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=None)
+    parser.add_argument("--checkpoint_per_steps", type=int, default=7500)
     
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.5)
