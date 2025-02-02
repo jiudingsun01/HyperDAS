@@ -16,7 +16,13 @@ from datasets import Dataset, load_from_disk
 from src.hyperdas.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
 import argparse
 
-from src.hyperdas.asymmetric.modules import HyperDASConfig, HyperDAS, HyperDASQuasiProjectiveConfig
+from src.hyperdas.asymmetric.configs import (
+    HouseholderConfig, 
+    AsymmetricHyperDASConfig, 
+    QuasiProjectiveConfig, 
+    SymmetricHyperDASConfig,
+    HyperDASConfig
+)
 
 
 from transformers import AutoTokenizer, AutoConfig
@@ -109,12 +115,8 @@ def run_experiment(
     from src.hyperdas.asymmetric.hypernet import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
-        model_name_or_path=model_name_or_path,
-        num_editing_heads=32,
-        intervention_layer=intervention_layer,
-        subspace_module=subspace_module,
-        das_dimension=das_dimension,
-        hyperdas_config=hyperdas_config,
+        tokenizer=tokenizer,
+        config=hyperdas_config
     )
     hypernetwork = hypernetwork.to("cuda")
         
@@ -155,18 +157,21 @@ if __name__ == "__main__":
     parser.add_argument("--intervention_layer", type=int, default=15)
     
     # HyperDAS Config
-    parser.add_argument('--subspace_module', default="QuasiProjective", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
+    parser.add_argument('--token_selection_module', default="asymmetric", choices=["asymmetric", "symmetric"])
+    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--load_trained_from", type=str, default=None)
-    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/cache/hub/models--google--gemma-2-9b-it/snapshots/11c9b309abf73637e4b6f9a3fa1e92e615547819")
+    # parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/cache/hub/models--google--gemma-2-9b-it/snapshots/11c9b309abf73637e4b6f9a3fa1e92e615547819")
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--num_decoders", type=int, default=4)
+    parser.add_argument("--num_editing_heads", type=int, default=32)
     parser.add_argument("--initialize_from_pretrained", default=False, action="store_true")
     
     # Training Config
     parser.add_argument("--n_epochs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/gemma2_data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/gemma2_data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=0.5)
@@ -209,32 +214,69 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args = dict(args.__dict__)
     
-    if args.subspace_module == 'QuasiProjective':
-        hyperdas_config = HyperDASQuasiProjectiveConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+    
+    if args["subspace_module"] == 'QuasiProjective':
+        subspace_config = QuasiProjectiveConfig()
+        
+        subspace_config.dict_size = args.pop("dict_size")
+        subspace_config.scoring_dimension = args.pop("scoring_dimension")
+        subspace_config.lambda_parameter = args.pop("lambda_parameter")
+        subspace_config.importance_power = args.pop("importance_power")
+        subspace_config.epsilon = args.pop("epsilon")
+        subspace_config.return_penalty = args.pop("return_penalty")
+        subspace_config.ridge_parameterization = args.pop("ridge_parameterization")
+        subspace_config.compute_metrics = args.pop("compute_metrics")
+        subspace_config.orthogonal_init = args.pop("orthogonal_init")
+        subspace_config.selection_mechanism = args.pop("selection_mechanism")
+        subspace_config.hat_matrix = args.pop("hat_matrix")
+        
+    elif args["subspace_module"] == 'ReflectSelect':
+        subspace_config = HouseholderConfig()
+        args.pop("dict_size")
+        args.pop("scoring_dimension")
+        args.pop("lambda_parameter")
+        args.pop("importance_power")
+        args.pop("epsilon")
+        args.pop("return_penalty")
+        args.pop("ridge_parameterization")
+        args.pop("compute_metrics")
+        args.pop("orthogonal_init")
+        args.pop("selection_mechanism")
+        args.pop("hat_matrix")
     else:
-        hyperdas_config = HyperDASConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+        raise NotImplementedError(f"Subspace module {args['subspace_module']} not implemented.")
     
-    model_name_or_path = args.pop("model_name_or_path")
+    subspace_config.subspace_dimension = args.pop("das_dimension")
     
-    model_config = AutoConfig.from_pretrained(model_name_or_path)
-
-    hyperdas_config.name_or_path = model_name_or_path
-    hyperdas_config.torch_dtype = args.pop("torch_dtype")
+    token_selection_module = args.pop("token_selection_module")
+                                                  
     
-    hyperdas_config.hidden_size = model_config.hidden_size
-    hyperdas_config.intermediate_size = model_config.intermediate_size
-    hyperdas_config.vocab_size = model_config.vocab_size
-    hyperdas_config.target_model_num_hidden_layers = model_config.num_hidden_layers
-            
-    hyperdas_config.num_editing_heads = args.pop("num_editing_heads")
+    if token_selection_module == "asymmetric":
+        hyperdas_config = AsymmetricHyperDASConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+        hyperdas_config.break_asymmetric = args.pop("break_asymmetric")
+        hyperdas_config.ablate_base_token_attention = args.pop("ablate_base_token_attention")
+        hyperdas_config.ablate_source_token_attention = args.pop("ablate_source_token_attention")
+        hyperdas_config.inference_modes = args.pop("inference_modes")
+        
+    elif token_selection_module == "symmetric":
+        hyperdas_config = SymmetricHyperDASConfig.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+        
+    target_model_config = AutoConfig.from_pretrained(args["model_name_or_path"])
+    
     hyperdas_config.num_decoders = args.pop("num_decoders")
+    hyperdas_config.num_editing_heads = args.pop("num_editing_heads")
     hyperdas_config.intervention_layer = args.pop("intervention_layer")
+    hyperdas_config.initialize_from_pretrained = args.pop("initialize_from_pretrained")
+    
+    hyperdas_config.hidden_size = target_model_config.hidden_size
+    hyperdas_config.intermediate_size = target_model_config.intermediate_size
+    hyperdas_config.vocab_size = target_model_config.vocab_size
+    hyperdas_config.target_model_num_hidden_layers = target_model_config.num_hidden_layers
+    hyperdas_config.target_model_name_or_path = args["model_name_or_path"]
     
     hyperdas_config._attn_implementation = 'eager'
-    hyperdas_config.initialize_from_pretrained = args.pop("initialize_from_pretrained")
-    hyperdas_config.ablate_base_token_attention = args.pop("ablate_base_token_attention")
-    hyperdas_config.ablate_source_token_attention = args.pop("ablate_source_token_attention")
-    hyperdas_config.break_asymmetric = args.pop("break_asymmetric")
+    hyperdas_config.subspace_config = subspace_config
+    
         
     if not os.path.exists(args["save_dir"]):
         os.makedirs(args["save_dir"])

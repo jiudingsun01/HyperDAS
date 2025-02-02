@@ -24,6 +24,7 @@ from ..utils import (
     assign_layer_indices,
 )
 from .layers import HyperDASDecoderLayerWithDoubleCrossAttention, HyperDASCrossAttention
+from .configs import *
 
 from ..das_utils import (
     BoundlessRotatedSpaceIntervention, 
@@ -51,32 +52,6 @@ import torch.nn.functional as F
 from transformers.cache_utils import Cache
 
 from ..utils import apply_rotary_pos_emb_single_attn
-
-class HyperDASConfig(LlamaConfig):
-    torch_dtype = torch.bfloat16
-    num_decoders: int = -1
-    num_editing_heads: int = 32
-    compute_position_ids: bool = True
-    intervention_layer: int = 24
-    initialize_from_pretrained: bool = False
-    ablate_base_token_attention: bool = False
-    ablate_source_token_attention: bool = False
-    break_asymmetric: bool = False
-    target_model_num_hidden_layers: int = None
-    
-    
-class HyperDASQuasiProjectiveConfig(HyperDASConfig):
-    dict_size: int = 32
-    scoring_dimension: int = 32
-    lambda_parameter: float = 0.001
-    importance_power: int = -2
-    epsilon=0.000001
-    return_penalty: bool = True
-    ridge_parameterization = None
-    compute_metrics: bool = True
-    orthogonal_init: bool = True
-    selection_mechanism: str = "dynamic"
-    hat_matrix: bool = True
     
 
 class HyperDASModel(LlamaModel):
@@ -587,54 +562,54 @@ class TokenSelectionHead(HyperDASCrossAttention):
         return attn_weights
     
 class HyperDAS(nn.Module):
-    def __init__(self, config: HyperDASConfig, subspace_module=None, das_dimension=None):
+    def __init__(self, config: HyperDASConfig):
         super().__init__()
 
         self.config = config
         self.hypernetwork = HyperDASForTokenSelection(config)
         self.target_model = AutoModelForCausalLM.from_pretrained(
-            config.name_or_path, torch_dtype=config.torch_dtype
+            config.target_model_name_or_path, torch_dtype=config.torch_dtype
         )
         
         self.bidding_threshold = 0.1
         
-        self.use_das_intervention = subspace_module != None
-        self.selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect", "QuasiProjective"]
+        self.subspace_intervention = config.subspace_config.is_subspace_intervention
+        self.selective_subspace = config.subspace_config.subspace_module in ["ReflectSelect", "QuasiProjective"]
                 
-        if self.use_das_intervention:
+        if self.subspace_intervention:
             
-            if subspace_module == "BoundlessDAS":
+            if isinstance(config.subspace_config, BoundlessDASConfig):
                 self.das_module = BoundlessRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size, torch_dtype=config.torch_dtype
                 )
-            elif subspace_module == "DAS":
+            elif isinstance(config.subspace_config, MDASConfig):
                 self.das_module = LowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=config.subspace_config.subspace_dimension, torch_dtype=config.torch_dtype
                 )
-            elif subspace_module == "MaskSelect":
+            elif isinstance(config.subspace_config, MaskSelectConfig):
                 self.das_module = SelectiveLowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=config.subspace_config.subspace_dimension, torch_dtype=config.torch_dtype
                 )
-            elif subspace_module == "ReflectSelect":
+            elif isinstance(config.subspace_config, HouseholderConfig):
                 self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=config.subspace_config.subspace_dimension, torch_dtype=config.torch_dtype
                 )
-            elif subspace_module == "QuasiProjective":
+            elif isinstance(config.subspace_config, QuasiProjectiveConfig):
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    dict_size=config.dict_size,
-                    scoring_dimension=config.scoring_dimension,
-                    top_k_parameter=das_dimension,
-                    lambda_parameter=config.lambda_parameter,
-                    importance_power=config.importance_power,
-                    epsilon=config.epsilon,
-                    return_penalty=config.return_penalty,
-                    ridge_parameterization=config.ridge_parameterization,
+                    dict_size=config.subspace_config.dict_size,
+                    scoring_dimension=config.subspace_config.scoring_dimension,
+                    top_k_parameter=config.subspace_config.subspace_dimension,
+                    lambda_parameter=config.subspace_config.lambda_parameter,
+                    importance_power=config.subspace_config.importance_power,
+                    epsilon=config.subspace_config.epsilon,
+                    return_penalty=config.subspace_config.return_penalty,
+                    ridge_parameterization=config.subspace_config.ridge_parameterization,
                     torch_dtype=config.torch_dtype,
-                    compute_metrics=config.compute_metrics,
-                    orthogonal_init=config.orthogonal_init,
-                    selection_mechanism=config.selection_mechanism,
-                    hat_matrix=config.hat_matrix,
+                    compute_metrics=config.subspace_config.compute_metrics,
+                    orthogonal_init=config.subspace_config.orthogonal_init,
+                    selection_mechanism=config.subspace_config.selection_mechanism,
+                    hat_matrix=config.subspace_config.hat_matrix,
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -878,7 +853,7 @@ class HyperDAS(nn.Module):
             batch_size = base_hidden_states.shape[0]
             base_intervention_weight = intervention_weight[:, -1, :]
             
-            if self.use_das_intervention:
+            if self.subspace_intervention:
                 
                 # print(intervention_matrix.shape)
                 # print(intervention_matrix[0, 1])
@@ -905,7 +880,7 @@ class HyperDAS(nn.Module):
                 output[0][:] += (intervention_matrix - res_diff)
             
         def embedding_representation_swap(module, input, output):
-            if self.use_das_intervention:
+            if self.subspace_intervention:
                 raise NotImplementedError("DAS intervention is not supported for token embeddings")
             
             base_hidden_states = output.clone()

@@ -1,5 +1,6 @@
 import torch
-from .modules import HyperDASConfig, HyperDAS, HyperDASQuasiProjectiveConfig
+from .modules import HyperDAS
+from .configs import HyperDASConfig
 from ..utils import InterpretorModelOutput
 from transformers import AutoTokenizer, AutoConfig
 import torch.nn as nn
@@ -16,29 +17,16 @@ import numpy as np
 class RavelInterpretorHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
-        self,
-        model_name_or_path="/home/ubuntu/llama3-8b",
-        subspace_module="ReflectSelect",
-        das_dimension=None,
-        hyperdas_config: HyperDASConfig = None,
+        self, tokenizer, config: HyperDASConfig = None, 
     ):
         super().__init__()
         
-        self.interpretor_config = hyperdas_config
+        self.interpretor_config = config
+        self.tokenizer = tokenizer
         
-        self.interpretor = HyperDAS(
-            self.interpretor_config, 
-            subspace_module=subspace_module, 
-            das_dimension=das_dimension,
-        )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        self.interpretor = HyperDAS(config)
 
-        self.use_das_intervention = subspace_module != None
-        self.das_dim = das_dimension
+        self.subspace_intervention = config.subspace_config.is_subspace_intervention
         self.residual_cache = None
         self.opt = None
         # self.training_loss = None
@@ -54,12 +42,12 @@ class RavelInterpretorHypernetwork(nn.Module):
             os.makedirs(save_dir)
             
         torch.save(self.interpretor.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
-        if self.use_das_intervention:
+        if self.subspace_intervention:
             torch.save(self.interpretor.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
         
     def load_model(self, load_dir):
         self.interpretor.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
-        if self.use_das_intervention:
+        if self.subspace_intervention:
             self.interpretor.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
             
     def set_intervention_layer(self, intervention_layer):
@@ -495,7 +483,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         total_steps = len(train_loader) * epochs
         cur_steps = 0
         
-        if self.use_das_intervention:
+        if self.subspace_intervention:
             das_temperature_schedule = torch.linspace(
                 self.das_temperature_start, self.das_temperature_end, total_steps + 1
             ).to(self.interpretor_config.torch_dtype).to("cuda")
@@ -615,7 +603,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "train_batch_prediction_loss": prediction_loss.item(),
                     }
                     
-                    if self.use_das_intervention:
+                    if self.subspace_intervention:
                         metrics["das_sparsity"] = self.interpretor.das_module.get_boundary_sparsity().item()
 
                     if wandb.run:
@@ -630,7 +618,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
-                    if self.use_das_intervention:
+                    if self.subspace_intervention:
                         self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
                     
                 if wandb.run:
