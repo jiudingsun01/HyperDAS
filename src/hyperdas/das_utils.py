@@ -177,8 +177,8 @@ class BoundlessRotatedSpaceIntervention(TrainableIntervention, DistributedRepres
     def __init__(self, embed_dim, torch_dtype, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = RotateLayer(self.embed_dim, torch_dtype=torch_dtype)
-        self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = RotateLayer(self.embed_dim, torch_dtype=torch_dtype, init_orth=True)
+        # self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.intervention_boundaries = torch.nn.Parameter(
             torch.tensor([0.5], dtype=torch_dtype), requires_grad=True
         )
@@ -252,8 +252,8 @@ class RotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationI
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
         self.intervention_dim = intervention_dim
-        rotate_layer = RotateLayer(self.embed_dim)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = RotateLayer(self.embed_dim, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         intervention_mask = torch.zeros(self.embed_dim)
         intervention_mask[: self.intervention_dim] = 1
         self.intervention_mask = nn.Parameter(
@@ -307,8 +307,8 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
     def __init__(self, embed_dim, low_rank_dimension, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         self.sparsity = low_rank_dimension / self.embed_dim
         
     def get_boundary_parameters(self):
@@ -347,8 +347,8 @@ class SelectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribute
     def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.float32, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         self.mask_projection = HiddenStatesProjectionMLP(
             in_size=self.embed_dim, 
             out_size=low_rank_dimension, 
@@ -407,8 +407,8 @@ class ReflectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribut
     def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.bfloat16, save_vector=False, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         
         self.rv_proj = HiddenStatesProjectionMLP(
             in_size=self.embed_dim, 
