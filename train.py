@@ -111,7 +111,7 @@ def run_experiment(
     from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
-        model_name_or_path=model_name_or_path,
+        target_model_name_or_path=model_name_or_path,
         num_editing_heads=32,
         intervention_layer=intervention_layer,
         subspace_module=subspace_module,

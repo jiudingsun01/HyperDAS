@@ -77,6 +77,10 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
+        
+    @classmethod
+    def from_config(cls, config: LlamaConfig):
+        return cls.from_config(config)
 
     def forward(
         self,
@@ -249,9 +253,15 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
 
     def __init__(self, config: LlamaInterpretorConfig):
         super().__init__(config)
-        self.model = LlamaModelWithCrossAttention.from_pretrained(
-            config.name_or_path, torch_dtype = config.torch_dtype
-        )
+        
+        if not config.initialize_from_scratch:
+            self.model = LlamaModelWithCrossAttention.from_pretrained(
+                config.name_or_path, torch_dtype = config.torch_dtype
+            )
+        else:
+            print("Initializing from scratch...")
+            self.model = LlamaModelWithCrossAttention._from_config(config)
+            self.model = self.model.to(dtype=config.torch_dtype)
         
         self.lm_head = InterpretorUnembedCrossAttention(
             config=config, layer_idx=config.chop_editor_at_layer
@@ -264,7 +274,8 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         self.post_init()
 
         # prune layers and add cross attn heads
-        self.model.layers = self.model.layers[: config.chop_editor_at_layer]
+        self.model.layers = self.model.layers[: config.chop_editor_at_layer]        
+        
         cross_attn_layers = list(range(config.chop_editor_at_layer))
         
         for i, layer in enumerate(self.model.layers):

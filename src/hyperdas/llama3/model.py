@@ -12,13 +12,15 @@ from tqdm import tqdm
 import time
 import json
 import numpy as np
+from transformers import AutoConfig
 
 
 class RavelInterpretorHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
         self,
-        model_name_or_path="/home/ubuntu/llama3-8b",
+        model_name_or_path="/nlp/scr/sjd24/llama3-8b",
+        target_model_name_or_path="/nlp/scr/sjd24/llama3-8b",
         num_editing_heads=32,
         chop_editor_at_layer=8,
         intervention_layer=0,
@@ -44,17 +46,34 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
         self.interpretor_config.break_asymmetric = break_asymmetric
         
+        target_model_config = AutoConfig.from_pretrained(target_model_name_or_path)
+        
+        if self.interpretor_config.hidden_siz != target_model_config.hidden_size:
+            self.interpretor_config.hidden_size = target_model_config.hidden_size
+            print(f"Changing the hidden size ({self.interpretor_config.hidden_size}) of the editor to match the target model's hidden size ({target_model_config.hidden_size})")
+        
+        if self.interpretor_config.intermediate_size != target_model_config.intermediate_size:
+            self.interpretor_config.intermediate_size = target_model_config.intermediate_size
+            print(f"Changing the intermediate size ({self.interpretor_config.intermediate_size}) of the editor to match the target model's intermediate size ({target_model_config.intermediate_size})")
+            
+        if self.interpretor_config.num_attention_heads != target_model_config.num_attention_heads:
+            self.interpretor_config.num_attention_heads = target_model_config.num_attention_heads
+            print(f"Changing the number of attention heads ({self.interpretor_config.num_attention_heads}) of the editor to match the target model's number of attention heads ({target_model_config.num_attention_heads})")
+            
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
             subspace_module=subspace_module, 
             das_dimension=das_dimension,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(target_model_name_or_path)
         
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
+        if "llama" in model_name_or_path:
+            self.tokenizer.padding_side = "left"
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        elif "gemma" in model_name_or_path:
+            self.tokenizer.padding_side = "right"
+            
         self.use_das_intervention = subspace_module != None
         self.das_dim = das_dimension
         self.residual_cache = None
