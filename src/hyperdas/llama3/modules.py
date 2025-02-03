@@ -272,9 +272,15 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
 
     def __init__(self, config: LlamaInterpretorConfig):
         super().__init__(config)
-        self.model = LlamaModelWithCrossAttention.from_pretrained(
-            config.name_or_path, torch_dtype = config.torch_dtype
-        )
+        
+        if not config.initialize_from_scratch:
+            self.model = LlamaModelWithCrossAttention.from_pretrained(
+                config.name_or_path, torch_dtype = config.torch_dtype
+            )
+        else:
+            print("Initializing from scratch...")
+            self.model = LlamaModelWithCrossAttention._from_config(config)
+            self.model = self.model.to(dtype=config.torch_dtype)
         
         self.lm_head = InterpretorUnembedCrossAttention(
             config=config, layer_idx=config.chop_editor_at_layer
@@ -429,13 +435,13 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
 
 
 class LlamaInterpretor(nn.Module):
-    def __init__(self, config: LlamaInterpretorConfig, subspace_module=None, das_dimension=None):
+    def __init__(self, config: LlamaInterpretorConfig, target_model_name_or_path, subspace_module=None, das_dimension=None):
         super().__init__()
 
         self.config = config
         self.hypernetwork = LlamaInterpretorHypernetwork(config)
         self.target_model = AutoModelForCausalLM.from_pretrained(
-            config.name_or_path, torch_dtype = config.torch_dtype
+            target_model_name_or_path, torch_dtype = config.torch_dtype
         )
         
         self.bidding_threshold = 0.1
@@ -675,7 +681,6 @@ class LlamaInterpretor(nn.Module):
             source_encoder_attention_mask=collapsed_source_attention_mask,
             use_cache=False
         )
-            
             
         # Multiply the outputs by normalization factors
         if source_intervention_weight is None:

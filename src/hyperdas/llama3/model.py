@@ -1,7 +1,7 @@
 import torch
 from.modules import LlamaInterpretorConfig, LlamaInterpretor
 from ..utils import InterpretorModelOutput
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoConfig
 import torch.nn as nn
 import torch.optim as optim
 import seaborn as sns
@@ -19,7 +19,8 @@ class RavelInterpretorHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
         self,
-        model_name_or_path="/home/ubuntu/llama3-8b",
+        model_name_or_path="/nlp/scr/sjd24/llama3-8b",
+        target_model_name_or_path="/nlp/scr/sjd24/llama3-8b",
         num_editing_heads=32,
         chop_editor_at_layer=8,
         intervention_layer=0,
@@ -39,18 +40,36 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config._attn_implementation = 'eager'
         self.interpretor_config.initialize_from_scratch = initialize_from_scratch
         
+        target_model_config = AutoConfig.from_pretrained(target_model_name_or_path)
+        self.interpretor_config.num_target_model_layers = target_model_config.num_hidden_layers
         
+        if self.interpretor_config.hidden_size != target_model_config.hidden_size:
+            print(f"Changing the hidden size ({self.interpretor_config.hidden_size}) of the editor to match the target model's hidden size ({target_model_config.hidden_size})")
+            self.interpretor_config.hidden_size = target_model_config.hidden_size
+        
+        if self.interpretor_config.intermediate_size != target_model_config.intermediate_size:
+            print(f"Changing the intermediate size ({self.interpretor_config.intermediate_size}) of the editor to match the target model's intermediate size ({target_model_config.intermediate_size})")
+            self.interpretor_config.intermediate_size = target_model_config.intermediate_size
+            
+        if self.interpretor_config.num_attention_heads != target_model_config.num_attention_heads:
+            print(f"Changing the number of attention heads ({self.interpretor_config.num_attention_heads}) of the editor to match the target model's number of attention heads ({target_model_config.num_attention_heads})")
+            self.interpretor_config.num_attention_heads = target_model_config.num_attention_heads
         
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
+            target_model_name_or_path=target_model_name_or_path,
             subspace_module=subspace_module, 
             das_dimension=das_dimension,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        self.tokenizer = AutoTokenizer.from_pretrained(target_model_name_or_path)
+        
+        if "llama" in model_name_or_path:
+            self.tokenizer.padding_side = "left"
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        elif "gemma" in model_name_or_path:
+            self.tokenizer.padding_side = "right"
 
         self.use_das_intervention = subspace_module != None
         self.das_dim = das_dimension
