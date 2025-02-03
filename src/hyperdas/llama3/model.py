@@ -48,20 +48,23 @@ class RavelInterpretorHypernetwork(nn.Module):
         
         target_model_config = AutoConfig.from_pretrained(target_model_name_or_path)
         
-        if self.interpretor_config.hidden_siz != target_model_config.hidden_size:
-            self.interpretor_config.hidden_size = target_model_config.hidden_size
+        self.interpretor_config.num_target_model_layers = target_model_config.num_hidden_layers
+        
+        if self.interpretor_config.hidden_size != target_model_config.hidden_size:
             print(f"Changing the hidden size ({self.interpretor_config.hidden_size}) of the editor to match the target model's hidden size ({target_model_config.hidden_size})")
+            self.interpretor_config.hidden_size = target_model_config.hidden_size
         
         if self.interpretor_config.intermediate_size != target_model_config.intermediate_size:
-            self.interpretor_config.intermediate_size = target_model_config.intermediate_size
             print(f"Changing the intermediate size ({self.interpretor_config.intermediate_size}) of the editor to match the target model's intermediate size ({target_model_config.intermediate_size})")
+            self.interpretor_config.intermediate_size = target_model_config.intermediate_size
             
         if self.interpretor_config.num_attention_heads != target_model_config.num_attention_heads:
-            self.interpretor_config.num_attention_heads = target_model_config.num_attention_heads
             print(f"Changing the number of attention heads ({self.interpretor_config.num_attention_heads}) of the editor to match the target model's number of attention heads ({target_model_config.num_attention_heads})")
+            self.interpretor_config.num_attention_heads = target_model_config.num_attention_heads
             
         self.interpretor = LlamaInterpretor(
-            self.interpretor_config, 
+            self.interpretor_config,
+            target_model_name_or_path=target_model_name_or_path,
             subspace_module=subspace_module, 
             das_dimension=das_dimension,
         )

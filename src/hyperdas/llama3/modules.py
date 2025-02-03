@@ -65,6 +65,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     orthogonal_init: bool = True
     selection_mechanism: str = "dynamic"
     hat_matrix: bool = True
+    num_target_model_layers: int = 32
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -419,13 +420,13 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
 
 
 class LlamaInterpretor(nn.Module):
-    def __init__(self, config: LlamaInterpretorConfig, subspace_module=None, das_dimension=None):
+    def __init__(self, config: LlamaInterpretorConfig, target_model_name_or_path, subspace_module=None, das_dimension=None):
         super().__init__()
 
         self.config = config
         self.hypernetwork = LlamaInterpretorHypernetwork(config)
         self.target_model = AutoModelForCausalLM.from_pretrained(
-            config.name_or_path, torch_dtype = config.torch_dtype
+            target_model_name_or_path, torch_dtype = config.torch_dtype
         )
         
         self.bidding_threshold = 0.1

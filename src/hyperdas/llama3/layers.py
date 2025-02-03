@@ -27,6 +27,7 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
     def __init__(self, config: LlamaConfig, layer_idx: Optional[int] = None, is_cross_attention=False):
         super().__init__(config=config, layer_idx=layer_idx)
         self.is_cross_attention = is_cross_attention
+        self.num_target_model_layer = config.num_target_model_layers
 
     def _update_encoder_attention_mask(self, attention_mask, attn_weights):
         attention_mask = attention_mask.unsqueeze(1)
@@ -104,7 +105,9 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
             kv_cos, kv_sin = self.rotary_emb(value_states, kv_position_ids)
             key_states = apply_rotary_pos_emb_single_attn(key_states, kv_cos, kv_sin)
             
-            kv_position_ids.view(33, -1)
+            
+            kv_position_ids.view(self.num_target_model_layer + 1, -1)
+            
         else:
             cos, sin = self.rotary_emb(value_states, position_ids)
             query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -425,7 +428,7 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
             raise ValueError("This class is only meant to be used as cross attention")
             # query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
         
-        n_layers = self.config.num_hidden_layers + 1
+        n_layers = self.config.num_target_model_layers + 1
         base_n_tokens = base_encoder_attention_mask.shape[-1] // n_layers
         source_n_tokens = source_encoder_attention_mask.shape[-1] // n_layers
         
