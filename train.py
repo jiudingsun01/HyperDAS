@@ -190,7 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("--break_asymmetric", default=False, action="store_true")
     
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
+    parser.add_argument('--subspace_module', default="QuasiProjective", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=4e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)

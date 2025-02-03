@@ -21,9 +21,17 @@ from ..utils import (
     InterpretorModelOutput,
     add_fwd_hooks,
     assign_layer_indices,
+    InterventionModuleOutput
 )
 from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
-from ..das_utils import BoundlessRotatedSpaceIntervention, RotatedSpaceIntervention, LowRankRotatedSpaceIntervention, SelectiveLowRankRotatedSpaceIntervention,ReflectiveLowRankRotatedSpaceIntervention
+from ..das_utils import (
+    BoundlessRotatedSpaceIntervention, 
+    RotatedSpaceIntervention,
+    LowRankRotatedSpaceIntervention, 
+    SelectiveLowRankRotatedSpaceIntervention,
+    ReflectiveLowRankRotatedSpaceIntervention,
+    QuasiProjectiveIntervention
+)
 
 from tqdm import tqdm
 from torch import optim
@@ -46,6 +54,17 @@ class LlamaInterpretorConfig(LlamaConfig):
     ablate_base_token_attention: bool = False
     ablate_source_token_attention: bool = False
     break_asymmetric: bool = False
+    dict_size: int = 32
+    scoring_dimension: int = 32
+    lambda_parameter: float = 0.001
+    importance_power: int = -2
+    epsilon=0.000001
+    return_penalty: bool = True
+    ridge_parameterization = None
+    compute_metrics: bool = True
+    orthogonal_init: bool = True
+    selection_mechanism: str = "dynamic"
+    hat_matrix: bool = True
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -401,7 +420,7 @@ class LlamaInterpretor(nn.Module):
         self.bidding_threshold = 0.1
         
         self.use_das_intervention = subspace_module != None
-        self.das_selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect"]
+        self.das_selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect", "QuasiProjective"]
                 
         if self.use_das_intervention:
             
@@ -420,6 +439,23 @@ class LlamaInterpretor(nn.Module):
             elif subspace_module == "ReflectSelect":
                 self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
+                )
+            elif subspace_module == "QuasiProjective":
+                self.das_module = QuasiProjectiveIntervention(
+                    embed_dim=self.target_model.config.hidden_size,
+                    dict_size=config.dict_size,
+                    scoring_dimension=config.scoring_dimension,
+                    top_k_parameter=das_dimension,
+                    lambda_parameter=config.lambda_parameter,
+                    importance_power=config.importance_power,
+                    epsilon=config.epsilon,
+                    return_penalty=config.return_penalty,
+                    ridge_parameterization=config.ridge_parameterization,
+                    torch_dtype=config.torch_dtype,
+                    compute_metrics=config.compute_metrics,
+                    orthogonal_init=config.orthogonal_init,
+                    selection_mechanism=config.selection_mechanism,
+                    hat_matrix=config.hat_matrix,
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -581,9 +617,14 @@ class LlamaInterpretor(nn.Module):
                 source_intervention_mask.shape[0],
                 source_intervention_mask.shape[1] * n_layer,
             )
+            
+            
+            inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
+            editor_input_ids = None
 
             interpretor_output = self.hypernetwork(
                 input_ids=editor_input_ids,
+                inputs_embeds=inputs_embeds,
                 attention_mask=editor_attention_mask,
                 base_hidden_states=collapsed_base_hidden_states,
                 base_attention_mask=collapsed_base_attention_mask,
@@ -667,6 +708,10 @@ class LlamaInterpretor(nn.Module):
                     mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, hypernet_hidden_states)
                 else:
                     mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, batch_size)
+                    
+                
+                if isinstance(mixed_output, InterventionModuleOutput):
+                    mixed_output = mixed_output.mixed_output
                 
                 output[0][:] += (mixed_output - base_hidden_states)
             else:
