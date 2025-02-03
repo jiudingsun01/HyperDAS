@@ -1,0 +1,68 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "input_prefix": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "input_suffix": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "counterfactual_input_prefix": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "counterfactual_input_suffix": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "edit_instruction": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "entity": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "counterfactual_entity": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "target": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "counterfactual_target": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "attribute_type": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "domain": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "attribute": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "verify_text": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "base_template_type": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "source_template_type": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

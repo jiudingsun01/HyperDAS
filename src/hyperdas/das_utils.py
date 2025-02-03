@@ -348,8 +348,8 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
     def __init__(self, embed_dim, low_rank_dimension, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         self.sparsity = low_rank_dimension / self.embed_dim
         
     def get_boundary_parameters(self):
@@ -388,8 +388,8 @@ class SelectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribute
     def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.float32, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         self.mask_projection = HiddenStatesProjectionMLP(
             in_size=self.embed_dim, 
             out_size=low_rank_dimension, 
@@ -448,8 +448,8 @@ class ReflectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribut
     def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.bfloat16, save_vector=False, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
-        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        self.rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=True)
+        # self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
         
         self.rv_proj = HiddenStatesProjectionMLP(
             in_size=self.embed_dim, 

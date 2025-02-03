@@ -94,6 +94,18 @@ class LlamaInterpretorConfig(LlamaConfig):
     ablate_base_token_attention: bool = False
     ablate_source_token_attention: bool = False
     break_asymmetric: bool = False
+    dict_size: int = 32
+    scoring_dimension: int = 32
+    lambda_parameter: float = 0.001
+    importance_power: int = -2
+    epsilon=0.000001
+    return_penalty: bool = True
+    ridge_parameterization = None
+    compute_metrics: bool = True
+    orthogonal_init: bool = True
+    selection_mechanism: str = "dynamic"
+    hat_matrix: bool = True
+    num_target_model_layers: int = 32
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -158,8 +170,11 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
+            
+        if not use_cache:
+            past_seen_tokens = None
 
-        causal_mask = self._update_causal_mask(attention_mask, inputs_embeds, cache_position, past_seen_tokens)
+        causal_mask = self._update_causal_mask(attention_mask, inputs_embeds, cache_position, past_seen_tokens, output_attentions=True)
 
         # embed positions
         hidden_states = inputs_embeds
@@ -449,20 +464,19 @@ class LlamaInterpretor(nn.Module):
             elif subspace_module == "QuasiProjective":
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    # dict_size=128,
-                    dict_size=das_dimension,
-                    scoring_dimension=32,
+                    dict_size=config.dict_size,
+                    scoring_dimension=config.scoring_dimension,
                     top_k_parameter=das_dimension,
-                    lambda_parameter=0.001,
-                    importance_power=-2,
-                    epsilon=0.000001,
-                    return_penalty=True,
-                    ridge_parameterization=None,
+                    lambda_parameter=config.lambda_parameter,
+                    importance_power=config.importance_power,
+                    epsilon=config.epsilon,
+                    return_penalty=config.return_penalty,
+                    ridge_parameterization=config.ridge_parameterization,
                     torch_dtype=config.torch_dtype,
-                    compute_metrics=True,
-                    orthogonal_init=True,
-                    selection_mechanism="dynamic",
-                    hat_matrix=True,
+                    compute_metrics=config.compute_metrics,
+                    orthogonal_init=config.orthogonal_init,
+                    selection_mechanism=config.selection_mechanism,
+                    hat_matrix=config.hat_matrix,
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -647,9 +661,13 @@ class LlamaInterpretor(nn.Module):
             source_intervention_mask.shape[0],
             source_intervention_mask.shape[1] * n_layer,
         )
+        
+        inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
+        editor_input_ids = None
 
         interpretor_output = self.hypernetwork(
             input_ids=editor_input_ids,
+            inputs_embeds=inputs_embeds,
             attention_mask=editor_attention_mask,
             base_encoder_hidden_states=collapsed_base_hidden_states,
             base_encoder_attention_mask=collapsed_base_attention_mask,

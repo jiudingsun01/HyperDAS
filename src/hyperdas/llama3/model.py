@@ -39,6 +39,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config._attn_implementation = 'eager'
         self.interpretor_config.initialize_from_scratch = initialize_from_scratch
         
+        
+        
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
             subspace_module=subspace_module, 

@@ -184,15 +184,15 @@ if __name__ == "__main__":
     parser.add_argument("--sparsity_loss_weight", type=float, default=1)
         
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="QuasiProjective", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
-    parser.add_argument("--das_dimension", type=int, default=1024)
+    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect", "QuasiProjective"])
+    parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     
     parser.add_argument("--eval_per_steps", type=int, default=500)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
-    parser.add_argument('--debug_mode', default="last_entity_token", choices=[None, "last_token", "last_entity_token"])
+    parser.add_argument('--debug_mode', default=None, choices=[None, "last_token", "last_entity_token"])
     
     args = parser.parse_args()
     args = dict(args.__dict__)
