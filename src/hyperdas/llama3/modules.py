@@ -23,15 +23,8 @@ from ..utils import (
     assign_layer_indices,
 )
 from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
-from ..das_utils import (
-    BoundlessRotatedSpaceIntervention, 
-    RotatedSpaceIntervention, 
-    LowRankRotatedSpaceIntervention, 
-    SelectiveLowRankRotatedSpaceIntervention,
-    ReflectiveLowRankRotatedSpaceIntervention,
-    QuasiProjectiveIntervention
-)
 
+from ..reft_utils import LoreftIntervention, SelectiveLoreftIntervention
 from ..utils import InterventionModuleOutput
 
 from tqdm import tqdm
@@ -73,10 +66,8 @@ class HyperDASModelOutputWithCrossAttentions(BaseModelOutputWithPast):
     """
 
     last_hidden_state: torch.FloatTensor = None
-    last_source_hidden_state: torch.FloatTensor = None
     last_base_hidden_state: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    source_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     base_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
@@ -91,21 +82,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     compute_position_ids: bool = True
     intervention_layer: int = 24
     initialize_from_scratch: bool = False
-    ablate_base_token_attention: bool = False
-    ablate_source_token_attention: bool = False
-    break_asymmetric: bool = False
-    dict_size: int = 32
-    scoring_dimension: int = 32
-    lambda_parameter: float = 0.001
-    importance_power: int = -2
-    epsilon=0.000001
-    return_penalty: bool = True
-    ridge_parameterization = None
-    compute_metrics: bool = True
-    orthogonal_init: bool = True
-    selection_mechanism: str = "dynamic"
-    hat_matrix: bool = True
-    num_target_model_layers: int = 32
+    num_target_model_layers : int = 32
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -123,8 +100,6 @@ class LlamaModelWithCrossAttention(LlamaModel):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
-        source_encoder_hidden_states: Optional[torch.Tensor] = None,
-        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         base_encoder_hidden_states: Optional[torch.Tensor] = None,
         base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
@@ -179,12 +154,10 @@ class LlamaModelWithCrossAttention(LlamaModel):
         # embed positions
         hidden_states = inputs_embeds
         base_hidden_states = inputs_embeds
-        source_hidden_states = inputs_embeds
         
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_base_hidden_states = () if output_hidden_states else None
-        all_source_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
@@ -192,18 +165,14 @@ class LlamaModelWithCrossAttention(LlamaModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
                 all_base_hidden_states += (base_hidden_states,)
-                all_source_hidden_states += (source_hidden_states,)
 
             if self.gradient_checkpointing and self.training:
                 
                 layer_outputs = self._gradient_checkpointing_func(
                     decoder_layer.__call__,
                     hidden_states,
-                    source_hidden_states,
                     base_hidden_states,
                     causal_mask,
-                    source_encoder_hidden_states,
-                    source_encoder_attention_mask,
                     base_encoder_hidden_states,
                     base_encoder_attention_mask,
                     position_ids,
@@ -215,11 +184,8 @@ class LlamaModelWithCrossAttention(LlamaModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    source_hidden_states=source_hidden_states,
                     base_hidden_states=base_hidden_states,
                     attention_mask=causal_mask,
-                    source_encoder_hidden_states=source_encoder_hidden_states,
-                    source_encoder_attention_mask=source_encoder_attention_mask,
                     base_encoder_hidden_states=base_encoder_hidden_states,
                     base_encoder_attention_mask=base_encoder_attention_mask,
                     position_ids=position_ids,
@@ -229,7 +195,7 @@ class LlamaModelWithCrossAttention(LlamaModel):
                     cache_position=cache_position,
                 )
                 
-            hidden_states, base_hidden_states, source_hidden_states = layer_outputs[0], layer_outputs[1], layer_outputs[2]
+            hidden_states, base_hidden_states = layer_outputs[0], layer_outputs[1]
             
             if use_cache:
                 next_decoder_cache = layer_outputs[4 if output_attentions else 3]
@@ -238,13 +204,11 @@ class LlamaModelWithCrossAttention(LlamaModel):
                 all_self_attns += (layer_outputs[3],)
 
         hidden_states = self.norm(hidden_states)
-        source_hidden_states = self.norm(source_hidden_states)
         base_hidden_states = self.norm(base_hidden_states)
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
-            all_source_hidden_states += (source_hidden_states,)
             all_base_hidden_states += (base_hidden_states,)
 
         next_cache = None
@@ -257,11 +221,9 @@ class LlamaModelWithCrossAttention(LlamaModel):
         
         return HyperDASModelOutputWithCrossAttentions(
             last_hidden_state=hidden_states,
-            last_source_hidden_state=source_hidden_states,
             last_base_hidden_state=base_hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
-            source_hidden_states=all_source_hidden_states,
             base_hidden_states=all_base_hidden_states,
             attentions=all_self_attns,
         )
@@ -365,8 +327,6 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         base_encoder_hidden_states: Optional[torch.Tensor] = None,
         base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        source_encoder_hidden_states: Optional[torch.Tensor] = None,
-        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -395,15 +355,13 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             inputs_embeds=inputs_embeds,
             base_encoder_hidden_states=base_encoder_hidden_states,
             base_encoder_attention_mask=base_encoder_attention_mask,
-            source_encoder_hidden_states=source_encoder_hidden_states,
-            source_encoder_attention_mask=source_encoder_attention_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
         
-        hidden_states, base_hidden_states, source_hidden_states = transformer_outputs[0], transformer_outputs[1], transformer_outputs[2]
+        hidden_states, base_hidden_states = transformer_outputs[0], transformer_outputs[1]
         
         # Set device for model parallelism
         if self.model_parallel:
@@ -411,14 +369,6 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             hidden_states = hidden_states.to(self.lm_head.weight.device)
             base_hidden_states = base_hidden_states.to(self.lm_head.weight.device)
             source_hidden_states = source_hidden_states.to(self.lm_head.weight.device)
-
-        source_attn_weight = self.lm_head(
-            source_hidden_states,
-            attention_mask=attention_mask,
-            encoder_hidden_states=source_encoder_hidden_states,
-            encoder_attention_mask=source_encoder_attention_mask,
-            output_attentions=output_attentions,
-        )
 
         base_attn_weight = self.lm_head(
             base_hidden_states,
@@ -429,7 +379,7 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         )
                 
         # (output, present[,attentions])
-        return hidden_states, source_attn_weight, base_attn_weight
+        return hidden_states, base_attn_weight
         # return base_hidden_states, source_attn_weight, base_attn_weight
         
 
@@ -447,42 +397,17 @@ class LlamaInterpretor(nn.Module):
         self.bidding_threshold = 0.1
         
         self.use_das_intervention = subspace_module != None
-        self.das_selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect", "QuasiProjective"]
+        self.das_selective_subspace = subspace_module in ["SelectiveLoReFT"]
                 
         if self.use_das_intervention:
             
-            if subspace_module == "BoundlessDAS":
-                self.das_module = BoundlessRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, torch_dtype=config.torch_dtype
+            if subspace_module == "LoReFT":
+                self.das_module = LoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=self.target_model.config.hidden_size, dtype=config.torch_dtype
                 )
-            elif subspace_module == "DAS":
-                self.das_module = LowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
-                )
-            elif subspace_module == "MaskSelect":
-                self.das_module = SelectiveLowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
-                )
-            elif subspace_module == "ReflectSelect":
-                self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
-                )
-            elif subspace_module == "QuasiProjective":
-                self.das_module = QuasiProjectiveIntervention(
-                    embed_dim=self.target_model.config.hidden_size,
-                    dict_size=config.dict_size,
-                    scoring_dimension=config.scoring_dimension,
-                    top_k_parameter=das_dimension,
-                    lambda_parameter=config.lambda_parameter,
-                    importance_power=config.importance_power,
-                    epsilon=config.epsilon,
-                    return_penalty=config.return_penalty,
-                    ridge_parameterization=config.ridge_parameterization,
-                    torch_dtype=config.torch_dtype,
-                    compute_metrics=config.compute_metrics,
-                    orthogonal_init=config.orthogonal_init,
-                    selection_mechanism=config.selection_mechanism,
-                    hat_matrix=config.hat_matrix,
+            elif subspace_module == "SelectiveLoReFT":
+                self.das_module = SelectiveLoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=self.target_model.config.hidden_size, dtype=config.torch_dtype
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -504,17 +429,7 @@ class LlamaInterpretor(nn.Module):
         else:"""
         
         self.layerwise_embeddings = None
-        
-    def get_penalty(self):
-        if isinstance(self.das_module, QuasiProjectiveIntervention):
-            return self.das_module.get_penalty()
-        
-        return None
     
-    def zero_penalty(self):
-        if isinstance(self.das_module, QuasiProjectiveIntervention):
-            self.das_module.zero_penalty()
-
     def train(self: T, mode: bool = True) -> T:
         return self.hypernetwork.train(mode)
 
@@ -560,15 +475,9 @@ class LlamaInterpretor(nn.Module):
         base_input_ids: torch.Tensor = None,
         base_attention_mask: torch.Tensor = None,
         base_intervention_mask: torch.Tensor = None,
-        source_input_ids: torch.Tensor = None,
-        source_attention_mask: torch.Tensor = None,
-        source_intervention_mask: torch.Tensor = None,
         base_hidden_states: torch.Tensor = None,
         base_position_ids: torch.Tensor = None,
-        source_hidden_states: torch.Tensor = None,
-        source_position_ids: torch.Tensor = None,
         intervention_layer: int = None,
-        source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
     ) -> InterpretorModelOutput:        
                 
@@ -578,10 +487,6 @@ class LlamaInterpretor(nn.Module):
         if base_position_ids is None:
             # -1 for all the padding tokens and start from 0 for the rest
             base_position_ids = torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
-            
-        if source_position_ids is None:
-            # -1 for all the padding tokens and start from 0 for the rest
-            source_position_ids = torch.cumsum(source_attention_mask, dim=1) * source_attention_mask - 1
         
         # Run target model for encoded hidden states
         if base_hidden_states is None:
@@ -591,46 +496,19 @@ class LlamaInterpretor(nn.Module):
                 ),  # seems to break while we are passing thru batch_size=1; the last (12th =) has different dimensions
                 dim=2,
             )
-        
-        if source_hidden_states is None:
-            source_hidden_states = torch.stack(
-                self._run_target_model_for_encoded_hidden_states(
-                    source_input_ids, source_attention_mask, source_position_ids
-                ),
-                dim=2,
-            )
             
         if base_intervention_mask is None:
             if base_attention_mask is not None:
                 base_intervention_mask = base_attention_mask.clone()
             else:
                 base_intervention_mask = torch.ones_like(base_input_ids)
-                
-        if source_intervention_mask is None:
-            if source_attention_mask is not None:
-                source_intervention_mask = source_attention_mask.clone()
-            else:
-                source_intervention_mask = torch.ones_like(source_input_ids)
             
         # dimensions of target_hidden_states:
         # batch_size, token_sequence_length, num_layers = 13, resid_width = 768
         # Normalize along the last dimension
         base_normalization_factors = base_hidden_states.norm(dim=-1, keepdim=True)
         base_hidden_states = base_hidden_states / base_normalization_factors
-        
-        source_normalization_factors = source_hidden_states.norm(dim=-1, keepdim=True)
-        source_hidden_states = source_hidden_states / source_normalization_factors
-        
-        if (source_intervention_mask.sum(dim=-1) == 0).any():
-            
-            tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
-            print("source_intervention_mask has zero row")
-            zero_row_idx = (source_intervention_mask.sum(dim=-1) == 0).nonzero(as_tuple=True)[0]
-            print(source_input_ids[zero_row_idx], zero_row_idx)
-            print("Full sentence: ", tokenizer.decode(source_input_ids[zero_row_idx][0]))
-            print("Attention mask: ", source_attention_mask[zero_row_idx][0])
-            print(source_intervention_mask[zero_row_idx][0])
-            raise
+    
             
         if (base_intervention_mask.sum(dim=-1) == 0).any():
             tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
@@ -655,19 +533,7 @@ class LlamaInterpretor(nn.Module):
             base_intervention_mask.shape[0],
             base_intervention_mask.shape[1] * n_layer,
         )
-        
-        collapsed_source_hidden_states = source_hidden_states.reshape(
-            source_hidden_states.shape[0],
-            source_hidden_states.shape[1] * source_hidden_states.shape[2],
-            source_hidden_states.shape[3],
-        )
-        
-        collapsed_source_attention_mask = source_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
-        collapsed_source_attention_mask = collapsed_source_attention_mask.reshape(
-            source_intervention_mask.shape[0],
-            source_intervention_mask.shape[1] * n_layer,
-        )
-        
+                
         inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
         editor_input_ids = None
 
@@ -677,38 +543,17 @@ class LlamaInterpretor(nn.Module):
             attention_mask=editor_attention_mask,
             base_encoder_hidden_states=collapsed_base_hidden_states,
             base_encoder_attention_mask=collapsed_base_attention_mask,
-            source_encoder_hidden_states=collapsed_source_hidden_states,
-            source_encoder_attention_mask=collapsed_source_attention_mask,
             use_cache=False
         )
             
-        # Multiply the outputs by normalization factors
-        if source_intervention_weight is None:
-            source_intervention_weight = interpretor_output[1]
-        else:
-            source_intervention_weight = source_intervention_weight.to(interpretor_output[1].dtype)
         
         if base_intervention_weight is None:
-            base_intervention_weight = interpretor_output[2]
+            base_intervention_weight = interpretor_output[1]
         else:
-            base_intervention_weight = base_intervention_weight.to(interpretor_output[2].dtype)
+            base_intervention_weight = base_intervention_weight.to(interpretor_output[1].dtype)
             
         hypernet_hidden_states = interpretor_output[0]
-                        
-        source_output = self.target_model(
-            input_ids=source_input_ids,
-            attention_mask=source_attention_mask,
-            output_hidden_states=True,
-        )
-        
-        source_hidden_states = source_output.hidden_states[intervention_layer]
-
-        hidden_dim = source_hidden_states.shape[-1]
-        
-        source_intervention = source_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim) * source_hidden_states
-        
-        source_intervention = source_intervention.sum(dim=1)
-        
+                                        
         # print(source_intervention[0])            
         
         # Run target model with edit vectors.
@@ -722,31 +567,17 @@ class LlamaInterpretor(nn.Module):
                                     
             if self.use_das_intervention:
                 
-                base_remaining_weight = 1 - base_intervention_weight
-                source_intervention_hidden_states = source_intervention.unsqueeze(1).repeat(1, base_hidden_states.shape[1], 1)
-                source_intervention_hidden_states = base_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim) * source_intervention_hidden_states + base_remaining_weight.unsqueeze(-1).repeat(1, 1, hidden_dim) * base_hidden_states
-                
-                """print(source_intervention_hidden_states[0, 18, :])
-                print(base_hidden_states[0, 18, :])
-                
-                print()
-                
-                print(source_intervention_hidden_states[0, 19, :])
-                print(base_hidden_states[0, 19, :])"""
+                hidden_dim = base_hidden_states.shape[-1]
+                base_hidden_states_weight = base_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim) 
                 
                 if self.das_selective_subspace:
-                    mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, hypernet_hidden_states)
+                    mixed_output += self.das_module(base_hidden_states, hypernet_hidden_states) * base_hidden_states_weight
                 else:
-                    mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, batch_size)
-                
-                # print(mixed_output - base_hidden_states)
-                
-                if isinstance(mixed_output, InterventionModuleOutput):
-                    mixed_output = mixed_output.mixed_output
+                    mixed_output = self.das_module(base_hidden_states, batch_size) * base_hidden_states_weight
                 
                 output[0][:] += (mixed_output - base_hidden_states)    
             else:
-                output[0][:] += (source_intervention_hidden_states - base_hidden_states)
+                raise NotImplementedError("Only DAS is implemented")
 
         # Now editing the target model
         if intervention_layer == 0:
@@ -769,7 +600,6 @@ class LlamaInterpretor(nn.Module):
         
         output = InterpretorModelOutput(
             logits=logits, 
-            source_intervention_weight=source_intervention_weight, 
             base_intervention_weight=base_intervention_weight,
             target_hidden_states=target_result.hidden_states,
         )

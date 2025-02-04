@@ -183,11 +183,8 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        source_hidden_states: Optional[torch.Tensor] = None,
         base_hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        source_encoder_hidden_states: Optional[torch.Tensor] = None,
-        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         base_encoder_hidden_states: Optional[torch.Tensor] = None,
         base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
@@ -231,33 +228,7 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             cache_position=cache_position,
             **kwargs,
         )
-        hidden_states = residual + hidden_states
-        
-        if source_hidden_states is not None and source_encoder_hidden_states is not None:
-                        
-            source_residual = source_hidden_states
-
-            source_hidden_states = self.cross_attn_input_layernorm(source_hidden_states)
-            source_cross_attn_outputs, _, _ = self.cross_attn(
-                hidden_states=source_hidden_states,
-                attention_mask=attention_mask,
-                encoder_hidden_states=source_encoder_hidden_states,
-                encoder_attention_mask=source_encoder_attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-            source_hidden_states = source_residual + source_cross_attn_outputs
-            
-            # Fully Connected
-            source_residual = source_hidden_states
-            source_hidden_states = self.post_cross_attn_layernorm(source_hidden_states)
-            source_hidden_states = self.cross_attn_mlp(source_hidden_states)
-            source_hidden_states = source_residual + source_hidden_states
-            
+        hidden_states = residual + hidden_states    
 
         if base_hidden_states is not None and base_encoder_hidden_states is not None:
             
@@ -292,11 +263,6 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
-        
-        if source_hidden_states is not None:
-            outputs += (source_hidden_states,)
-        else:
-            outputs += (None,)
         
         if base_hidden_states is not None:
             outputs += (base_hidden_states,)
