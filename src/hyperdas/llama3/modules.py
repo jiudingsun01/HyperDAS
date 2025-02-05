@@ -565,7 +565,7 @@ class LlamaInterpretor(nn.Module):
                 else:
                     mixed_output = self.das_module(base_hidden_states) * base_hidden_states_weight
                 
-                output[0][:] += (mixed_output - base_hidden_states)    
+                output[0][:] += mixed_output   
             else:
                 raise NotImplementedError("Only DAS is implemented")
 

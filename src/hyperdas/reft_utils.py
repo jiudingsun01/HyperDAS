@@ -68,7 +68,7 @@ class LoreftIntervention(
         self, base, source=None, subspaces=None
     ):
         rotated_base = self.rotate_layer(base)
-        output = base + torch.matmul(
+        output = torch.matmul(
             (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
         )
         return self.dropout(output.to(base.dtype))
@@ -148,7 +148,7 @@ class SelectiveLoreftIntervention(
         
         rotated_base = torch.bmm(base, reflected_weight)
     
-        output = base + torch.matmul(
+        output = torch.matmul(
             (self.act_fn(self.learned_source(base)) - rotated_base), torch.transpose(reflected_weight, 1, 2)
         )
         return self.dropout(output.to(base.dtype))
@@ -200,7 +200,7 @@ class SteeringVecLoreftIntervention(
     def forward(
         self, base, hidden_states, source=None, subspaces=None
     ):
-        output = base + hidden_states[:, -1, :].unsqueeze(1).repeat(1, base.shape[1], 1)
+        output = hidden_states[:, -1, :].unsqueeze(1).repeat(1, base.shape[1], 1)
         return self.dropout(output.to(base.dtype))
 
     def state_dict(self, *args, **kwargs):
