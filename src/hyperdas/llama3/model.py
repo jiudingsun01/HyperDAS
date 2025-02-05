@@ -391,6 +391,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         train_loader,
         test_loader=None,
         epochs=1,
+        n_steps=1000,
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
         causal_loss_weight=1.0,
@@ -426,7 +427,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         
         self.opt = optim.AdamW(trainable_parameters, lr=lr, weight_decay=weight_decay)  # usually: lr = 5e-5. 1e-3 worked well!
         
-        total_steps = len(train_loader) * epochs
+        total_steps = len(train_loader) * epochs if n_steps is None else n_steps
         cur_steps = 0
             
         for epoch in range(epochs):
@@ -443,6 +444,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                 for step, batch in enumerate(
                     train_loader
                 ):  
+                    
+                    if cur_steps >= total_steps:
+                        break
+                    
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
                             # Evaluate the model
@@ -564,6 +569,9 @@ class RavelInterpretorHypernetwork(nn.Module):
                             / num_datapoints_in_epoch,
                         }
                     )
+                
+                if cur_steps >= total_steps:
+                    break
                     
         result_dict = {}
         accs, test_loss, correct_indices = self.eval_accuracy(test_loader, eval_n_label_tokens=3, debug_mode=debug_mode)

@@ -32,6 +32,7 @@ def run_experiment(
     batch_size=8,
     save_dir=None,
     n_epochs=1,
+    n_steps=1000,
     das_dimension=None,
     lr=3e-5,
     weight_decay=0.01,
@@ -117,6 +118,7 @@ def run_experiment(
         train_loader=data_loader,
         test_loader=test_data_loader,
         epochs=n_epochs,
+        n_steps=n_steps,
         checkpoint_per_steps = checkpoint_per_steps,
         eval_per_steps = eval_per_steps,
         save_dir=save_dir,
@@ -144,6 +146,8 @@ if __name__ == "__main__":
     parser.add_argument("--load_trained_from", type=str, default=None)
     
     parser.add_argument("--n_epochs", type=int, default=15)
+    parser.add_argument("--n_steps", type=int, default=5000)
+    
     parser.add_argument("--model_name_or_path", type=str, default="meta-llama/Meta-Llama-3-8B")
     parser.add_argument("--batch_size", type=int, default=16)
     
@@ -163,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--sparsity_loss_weight", type=float, default=1)
         
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="LoReFT", choices=["LoReFT"])
+    parser.add_argument('--subspace_module', default="SelectiveLoReFT", choices=["LoReFT", "SelectiveLoReFT", "SteeringVec"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)

@@ -24,7 +24,7 @@ from ..utils import (
 )
 from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
 
-from ..reft_utils import LoreftIntervention, SelectiveLoreftIntervention
+from ..reft_utils import LoreftIntervention, SelectiveLoreftIntervention, SteeringVecLoreftIntervention
 from ..utils import InterventionModuleOutput
 
 from tqdm import tqdm
@@ -384,17 +384,21 @@ class LlamaInterpretor(nn.Module):
         self.bidding_threshold = 0.1
         
         self.use_das_intervention = subspace_module != None
-        self.das_selective_subspace = subspace_module in ["SelectiveLoReFT"]
+        self.das_selective_subspace = subspace_module in ["SelectiveLoReFT", "SteeringVec"]
                 
         if self.use_das_intervention:
             
             if subspace_module == "LoReFT":
                 self.das_module = LoreftIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=self.target_model.config.hidden_size, dtype=config.torch_dtype
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, dtype=config.torch_dtype
                 )
             elif subspace_module == "SelectiveLoReFT":
                 self.das_module = SelectiveLoreftIntervention(
-                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=self.target_model.config.hidden_size, dtype=config.torch_dtype
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, dtype=config.torch_dtype
+                )
+            elif subspace_module == "SteeringVec":
+                self.das_module = SteeringVecLoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, dtype=config.torch_dtype
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -547,7 +551,6 @@ class LlamaInterpretor(nn.Module):
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
         def representation_swap(module, input, output):
             base_hidden_states = output[0].clone()
-            batch_size = base_hidden_states.shape[0]
             
             # print(base_hidden_states[0, 18, :])
             # print(source_hidden_states[0, 6, :])
@@ -558,9 +561,9 @@ class LlamaInterpretor(nn.Module):
                 base_hidden_states_weight = base_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim) 
                 
                 if self.das_selective_subspace:
-                    mixed_output += self.das_module(base_hidden_states, hypernet_hidden_states) * base_hidden_states_weight
+                    mixed_output = self.das_module(base_hidden_states, hidden_states=hypernet_hidden_states) * base_hidden_states_weight
                 else:
-                    mixed_output = self.das_module(base_hidden_states, batch_size) * base_hidden_states_weight
+                    mixed_output = self.das_module(base_hidden_states) * base_hidden_states_weight
                 
                 output[0][:] += (mixed_output - base_hidden_states)    
             else:

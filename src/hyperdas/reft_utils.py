@@ -6,9 +6,29 @@ from pyvene import (
     DistributedRepresentationIntervention,
 )
 
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
 import torch
+import torch.nn as nn
 from transformers.activations import ACT2FN
 from collections import OrderedDict
+
+
+class HiddenStatesProjectionMLP(nn.Module):
+    def __init__(self, in_size, out_size, intermediate_size=14336, torch_dtype=torch.float32):
+        super().__init__()
+        self.in_size = in_size
+        self.out_size = out_size
+        self.intermediate_size = intermediate_size
+        
+        self.gate_proj = nn.Linear(self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype)
+        self.up_proj = nn.Linear(self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype)
+        self.down_proj = nn.Linear(self.intermediate_size, self.out_size, bias=False, dtype=torch_dtype)
+        self.act_fn = nn.SiLU()
+        
+    def forward(self, x):
+        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+    
 
 class LowRankRotateLayer(torch.nn.Module):
     """A linear transformation with orthogonal initialization."""
@@ -104,12 +124,32 @@ class SelectiveLoreftIntervention(
         self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
         self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
         
+        
+        self.rv_proj = HiddenStatesProjectionMLP(
+            in_size=self.embed_dim, 
+            out_size=self.embed_dim, 
+            torch_dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+        )
+        
+        self.input_layernorm = LlamaRMSNorm(
+            hidden_size=self.embed_dim, eps=1e-5
+        ).to(dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+        
     def forward(
-        self, base, source=None, subspaces=None
+        self, base, hidden_states, source=None, subspaces=None
     ):
-        rotated_base = self.rotate_layer(base)
+        
+        normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
+        rv = self.rv_proj(normalized_hidden_state)
+        rv = rv / torch.norm(rv, dim=-1, keepdim=True)
+        
+        householder = torch.eye(self.embed_dim, device=rv.device, dtype=rv.dtype).unsqueeze(0) - 2 * torch.bmm(rv.unsqueeze(2), rv.unsqueeze(1))
+        reflected_weight = torch.matmul(householder, self.rotate_layer.weight.to(rv.dtype))
+        
+        rotated_base = torch.bmm(base, reflected_weight)
+    
         output = base + torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
+            (self.act_fn(self.learned_source(base)) - rotated_base), torch.transpose(reflected_weight, 1, 2)
         )
         return self.dropout(output.to(base.dtype))
 
@@ -140,5 +180,36 @@ class SelectiveLoreftIntervention(
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
         assert torch.allclose(self.rotate_layer.weight.data, overload_w.data) == True # we must match!
+        
+        return
+    
+    
+class SteeringVecLoreftIntervention(
+    SourcelessIntervention,
+    TrainableIntervention, 
+    DistributedRepresentationIntervention
+):
+    """
+    LoReFT(h) = h + R^T(Wh + b − Rh)
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs, keep_last_dim=True)
+        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
+        self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
+        
+    def forward(
+        self, base, hidden_states, source=None, subspaces=None
+    ):
+        output = base + hidden_states[:, -1, :].unsqueeze(1).repeat(1, base.shape[1], 1)
+        return self.dropout(output.to(base.dtype))
+
+    def state_dict(self, *args, **kwargs):
+        """
+        Overwrite for data-efficiency.
+        """
+        state_dict = OrderedDict()
+        return state_dict
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
         
         return
