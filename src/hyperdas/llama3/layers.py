@@ -230,13 +230,14 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         )
         hidden_states = residual + hidden_states    
 
-        if base_hidden_states is not None and base_encoder_hidden_states is not None:
+        if base_encoder_hidden_states is not None:
             
-            base_residual = base_hidden_states
-
-            base_hidden_states = self.cross_attn_input_layernorm(base_hidden_states)
-            base_cross_attn_outputs, _, _ = self.cross_attn(
-                hidden_states=base_hidden_states,
+            residual = hidden_states
+            
+            hidden_states = self.cross_attn_input_layernorm(hidden_states)
+            
+            cross_attn_outputs, _, _ = self.cross_attn(
+                hidden_states=hidden_states,
                 attention_mask=attention_mask,
                 encoder_hidden_states=base_encoder_hidden_states,
                 encoder_attention_mask=base_encoder_attention_mask,
@@ -247,13 +248,8 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
                 cache_position=cache_position,
                 **kwargs,
             )
-            base_hidden_states = base_residual + base_cross_attn_outputs
             
-            # Fully Connected
-            base_residual = base_hidden_states
-            base_hidden_states = self.post_cross_attn_layernorm(base_hidden_states)
-            base_hidden_states = self.cross_attn_mlp(base_hidden_states)
-            base_hidden_states = base_residual + base_hidden_states
+            hidden_states = residual + cross_attn_outputs
             
         # Fully Connected
         residual = hidden_states
@@ -264,12 +260,6 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
 
         outputs = (hidden_states,)
         
-        if base_hidden_states is not None:
-            outputs += (base_hidden_states,)
-        else:
-            outputs += (None,)
-            
-
         if output_attentions:
             outputs += (self_attn_weights,)
 

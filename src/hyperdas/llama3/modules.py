@@ -66,9 +66,7 @@ class HyperDASModelOutputWithCrossAttentions(BaseModelOutputWithPast):
     """
 
     last_hidden_state: torch.FloatTensor = None
-    last_base_hidden_state: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    base_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
 
@@ -153,25 +151,21 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
         # embed positions
         hidden_states = inputs_embeds
-        base_hidden_states = inputs_embeds
         
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
-        all_base_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
         for decoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-                all_base_hidden_states += (base_hidden_states,)
 
             if self.gradient_checkpointing and self.training:
                 
                 layer_outputs = self._gradient_checkpointing_func(
                     decoder_layer.__call__,
                     hidden_states,
-                    base_hidden_states,
                     causal_mask,
                     base_encoder_hidden_states,
                     base_encoder_attention_mask,
@@ -184,7 +178,6 @@ class LlamaModelWithCrossAttention(LlamaModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    base_hidden_states=base_hidden_states,
                     attention_mask=causal_mask,
                     base_encoder_hidden_states=base_encoder_hidden_states,
                     base_encoder_attention_mask=base_encoder_attention_mask,
@@ -195,7 +188,7 @@ class LlamaModelWithCrossAttention(LlamaModel):
                     cache_position=cache_position,
                 )
                 
-            hidden_states, base_hidden_states = layer_outputs[0], layer_outputs[1]
+            hidden_states = layer_outputs[0]
             
             if use_cache:
                 next_decoder_cache = layer_outputs[4 if output_attentions else 3]
@@ -204,12 +197,10 @@ class LlamaModelWithCrossAttention(LlamaModel):
                 all_self_attns += (layer_outputs[3],)
 
         hidden_states = self.norm(hidden_states)
-        base_hidden_states = self.norm(base_hidden_states)
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
-            all_base_hidden_states += (base_hidden_states,)
 
         next_cache = None
         if use_cache:
@@ -221,10 +212,8 @@ class LlamaModelWithCrossAttention(LlamaModel):
         
         return HyperDASModelOutputWithCrossAttentions(
             last_hidden_state=hidden_states,
-            last_base_hidden_state=base_hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
-            base_hidden_states=all_base_hidden_states,
             attentions=all_self_attns,
         )
 
@@ -361,17 +350,15 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             return_dict=return_dict,
         )
         
-        hidden_states, base_hidden_states = transformer_outputs[0], transformer_outputs[1]
+        hidden_states = transformer_outputs[0]
         
         # Set device for model parallelism
         if self.model_parallel:
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
-            base_hidden_states = base_hidden_states.to(self.lm_head.weight.device)
-            source_hidden_states = source_hidden_states.to(self.lm_head.weight.device)
 
         base_attn_weight = self.lm_head(
-            base_hidden_states,
+            hidden_states,
             attention_mask=attention_mask,
             encoder_hidden_states=base_encoder_hidden_states,
             encoder_attention_mask=base_encoder_attention_mask,
