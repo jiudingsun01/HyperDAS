@@ -28,20 +28,34 @@ class ReFTHypernetwork(nn.Module):
         dropout: float = 0.05,
     ) -> None:
         """
-        Run once for each target layer for applying the ReFT in the target network.
-        Or batch layers together (more memory intensive).
+        ReFT Hypernetwork that generates weight and rotation matrices for target model intervention.
+
+        Args:
+            hidden_size: Hidden dimension size of the source model
+            target_hidden_size: Hidden dimension size of the target model
+            num_target_layers: Number of layers in the target model
+            num_target_positions: Number of positions to intervene on in the target model
+            intermediate_size: Size of intermediate MLP layers
+            rank: Rank of the factorized weight matrices
+            rms_norm_eps: Epsilon value for layer normalization (default: 1e-6)
+            dropout: Dropout probability (default: 0.05)
         """
         super().__init__()
         self.embed_dim = hidden_size
         self.target_embed_dim = target_hidden_size
         self.num_target_layers = num_target_layers
+        self.rank = rank
+        self.task_encoder = nn.Sequential(
+            nn.Embedding(hidden_size, hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2, eps=rms_norm_eps),
+        )
         self.position_encoder = nn.Sequential(
-            nn.Embedding(num_target_positions, hidden_size),
-            nn.LayerNorm(hidden_size, eps=rms_norm_eps),
+            nn.Embedding(num_target_positions, hidden_size // 4),
+            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps),
         )
         self.layer_encoder = nn.Sequential(
-            nn.Embedding(num_target_layers, hidden_size),
-            nn.LayerNorm(hidden_size, eps=rms_norm_eps),
+            nn.Embedding(num_target_layers, hidden_size // 4),
+            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps),
         )
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, intermediate_size),
@@ -51,12 +65,8 @@ class ReFTHypernetwork(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout),
         )
-        self.weight_head = nn.Linear(
-            hidden_size, target_hidden_size * rank * num_target_positions
-        )
-        self.rotate_head = nn.Linear(
-            hidden_size, target_hidden_size * rank * num_target_positions
-        )
+        self.weight_head = nn.Linear(hidden_size, target_hidden_size * rank)
+        self.rotate_head = nn.Linear(hidden_size, target_hidden_size * rank)
 
     def forward(
         self,
@@ -73,14 +83,37 @@ class ReFTHypernetwork(nn.Module):
         Returns:
             Tuple of (weight_matrix, rotation_matrix) of shape (batch_size, target_hidden_size, num_target_layers)
         """
+        _, n_layers = layer_indices.shape
+        _, n_positions = position_indices.shape
+        # (B, 1, H // 2)
+        task_encoding = self.task_encoder(task_encoding).unsqueeze(1)
+        # (B, P, H // 4)
         pos_emb = self.position_encoder(position_indices)
+        # (B, L, H // 4)
         layer_emb = self.layer_encoder(layer_indices)
-        out = self.mlp(task_encoding + layer_emb + pos_emb)
-        rotation_matrix = self.rotate_head(out).reshape(
-            -1, self.target_embed_dim, self.num_target_layers
+
+        # Expand shapes to match
+        task_encoding = task_encoding.expand(-1, n_layers, -1)
+        pos_emb = pos_emb.unsqueeze(1).expand(-1, n_layers, -1, -1)
+        layer_emb = layer_emb.unsqueeze(2)  # (B, L, 1, H//4)
+
+        # (B, L, P, H)
+        repr = torch.cat(
+            [
+                task_encoding.unsqueeze(2).expand(-1, -1, n_positions, -1),
+                layer_emb.expand(-1, -1, n_positions, -1),
+                pos_emb,
+            ],
+            dim=-1,
         )
+
+        out = self.mlp(repr)
+        rotation_matrix_unorth = self.rotate_head(out).reshape(
+            -1, n_layers, n_positions, self.target_embed_dim, self.rank
+        )
+        rotation_matrix, _ = torch.linalg.qr(rotation_matrix_unorth, mode="reduced")
         weight_matrix = self.weight_head(out).reshape(
-            -1, self.target_embed_dim, self.num_target_layers
+            -1, n_layers, n_positions, self.target_embed_dim, self.rank
         )
         return weight_matrix, rotation_matrix
 
@@ -128,17 +161,24 @@ class LoreftIntervention(
 ):
     """
     LoReFT(h) = h + R^T(Wh + b − Rh)
+
+    Supports batch-specific rotation and weight matrices.
     """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
+        self.embed_dim = kwargs["embed_dim"]
+        self.low_rank_dimension = kwargs["low_rank_dimension"]
+
+        # Initialize with default weights that can be overridden per batch
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True
+            self.embed_dim, self.low_rank_dimension, init_orth=True
         )
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]
+            self.embed_dim, self.low_rank_dimension
         ).to(kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+
         self.dropout = torch.nn.Dropout(
             kwargs["dropout"] if "dropout" in kwargs else 0.0
         )
@@ -148,13 +188,64 @@ class LoreftIntervention(
             else ACT2FN[kwargs["act_fn"]]
         )
 
-    def forward(self, base, source=None, subspaces=None) -> InterventionModuleOutput:
+        # Store batch-specific parameters
+        self.batch_rotation = None
+        self.batch_weights = None
+
+    def set_batch_parameters(
+        self, rotation_matrix: torch.Tensor, weight_matrix: torch.Tensor
+    ):
+        """Set batch-specific rotation and weight matrices.
+
+        Args:
+            rotation_matrix: Tensor of shape (batch_size, target_hidden_size, low_rank_dimension)
+            weight_matrix: Tensor of shape (batch_size, target_hidden_size, low_rank_dimension)
+        """
+        self.batch_rotation = rotation_matrix
+        self.batch_weights = weight_matrix
+
+    def forward(
+        self, base, source=None, subspaces=None, intervention_positions=None
+    ) -> InterventionModuleOutput:
         metrics = {}
-        rotated_base = self.rotate_layer(base)
-        mixed_output = torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base),
-            self.rotate_layer.weight.T,
-        )
+
+        if self.batch_rotation is not None and self.batch_weights is not None:
+            # self.batch_rotation: [B, P, H, R]
+            # self.batch_weights: [B, P, H, R]
+            # base: [B, seq_len, H]
+
+            batch_size, seq_len, hidden_dim = base.shape
+            position_mask = torch.zeros(
+                (batch_size, seq_len), device=base.device, dtype=torch.bool
+            )
+            batch_indices = torch.arange(batch_size, device=base.device).unsqueeze(-1)
+            position_mask[batch_indices, intervention_positions] = True  # [B, seq_len]
+
+            # Apply LoReFT transformation where mask is True
+            rotated_states = torch.matmul(base, self.batch_rotation)  # [B, seq_len, R]
+            learned_states = torch.matmul(base, self.batch_weights)  # [B, seq_len, R]
+
+            mixed_states = torch.matmul(
+                (self.act_fn(learned_states) - rotated_states),  # [B, seq_len, R]
+                self.batch_rotation.transpose(-2, -1),  # [B, P, R, H]
+            )  # [B, seq_len, H]
+
+            # Blend based on position mask
+            mixed_output = torch.where(
+                position_mask.unsqueeze(-1),  # [B, seq_len, H]
+                mixed_states,
+                base,
+            )
+
+            mixed_output = self.dropout(mixed_output.to(base.dtype))
+        else:
+            # Fallback to global parameters
+            rotated_base = self.rotate_layer(base)
+            mixed_output = torch.matmul(
+                (self.act_fn(self.learned_source(base)) - rotated_base),
+                self.rotate_layer.weight.T,
+            )
+
         mixed_output = self.dropout(mixed_output.to(base.dtype))
         return InterventionModuleOutput(mixed_output=mixed_output, metrics=metrics)
 
@@ -287,7 +378,9 @@ class SelectiveLoreftIntervention(
 
 
 class SteeringVecLoreftIntervention(
-    SourcelessIntervention, TrainableIntervention, DistributedRepresentationIntervention
+    SourcelessIntervention,
+    TrainableIntervention,
+    DistributedRepresentationIntervention,
 ):
     """
     LoReFT(h) = h + R^T(Wh + b − Rh)

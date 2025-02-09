@@ -15,6 +15,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
+from hyperdas.data.axbench import split_axbench16k_train_test
 from logger import get_logger
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
 from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
@@ -64,14 +65,29 @@ def run_experiment(
 
     train_set = load_from_disk(config.dataset.train_path)
 
-    # Load multiple test sets
-    if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
-        test_set = [load_from_disk(path) for path in config.dataset.test_path]
+    if not config.dataset.test_path:
+        if config.dataset.dataset_type != "axbench":
+            raise ValueError("Test path is required for dataset type")
+        logger.debug("Splitting axbench train set into train and test sets")
+        train_set, test_set = split_axbench16k_train_test(
+            train_set,
+            split_by=config.dataset.split_by,
+            train_ratio=config.dataset.train_ratio,
+        )
     else:
-        test_set = load_from_disk(config.dataset.test_path)
+        # Load multiple test sets
+        if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
+            test_set = [load_from_disk(path) for path in config.dataset.test_path]
+        else:
+            test_set = load_from_disk(config.dataset.test_path)
 
     if config.dataset.dataset_type == "axbench":
-        collate_fn = get_axbench_collate_fn(tokenizer)
+        collate_fn = get_axbench_collate_fn(
+            tokenizer,
+            mode=config.dataset.axbench_mode,
+            intervention_layers=config.model.intervention_layers,
+            intervention_positions=config.model.intervention_positions,
+        )
     elif config.dataset.dataset_type == "ravel":
         collate_fn = get_ravel_collate_fn(
             tokenizer,

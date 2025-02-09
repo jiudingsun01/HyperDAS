@@ -100,7 +100,26 @@ def tokenize_text_inputs(tokenizer, inputs, targets, add_space_before_target=Tru
     return return_dict
 
 
-def get_axbench_collate_fn(tokenizer):
+def parse_positions(positions: str):
+    # parse position
+    first_n, last_n = 0, 0
+    if "+" in positions:
+        first_n = int(positions.split("+")[0].strip("f"))
+        last_n = int(positions.split("+")[1].strip("l"))
+    else:
+        if "f" in positions:
+            first_n = int(positions.strip("f"))
+        elif "l" in positions:
+            last_n = int(positions.strip("l"))
+    return first_n, last_n
+
+
+def get_axbench_collate_fn(
+    tokenizer,
+    mode="steering",
+    intervention_layers=None,
+    intervention_positions=None,
+):
     def collate_fn(batch):
         inputs, edit_instructions, targets = [], [], []
 
@@ -113,11 +132,21 @@ def get_axbench_collate_fn(tokenizer):
             edit_instructions, return_tensors="pt", padding=True, truncation=True
         )["input_ids"]
         is_causal = torch.tensor([1 for _ in batch])
+
         returned_dict = {
             "editor_input_ids": editor_input_ids,
             "is_causal": is_causal,
             **tokenize_text_inputs(tokenizer, inputs, targets),
         }
+
+        # create intervention layer and positions
+        if mode == "steering":
+            intervention_pos = [
+                parse_positions(intervention_positions or "f7+l7") for _ in batch
+            ]
+            intervention_l = [intervention_layers or [7] for _ in batch]
+            returned_dict["intervention_layers"] = intervention_l
+            returned_dict["intervention_positions"] = intervention_pos
 
         return returned_dict
 

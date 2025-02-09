@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union, Literal
 import torch
 import torch.nn as nn
@@ -48,6 +49,7 @@ from dataclasses import dataclass
 
 T_Learned = TypeVar("T_Learned", bound="LlamaInterpretorWithLearnedSource")
 T_Regular = TypeVar("T_Regular", bound="LlamaInterpretor")
+T_Reft = TypeVar("T_Reft", bound="LlamaInterpretorForReFTGeneration")
 
 
 @dataclass
@@ -497,6 +499,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             intermediate_size=config.intermediate_size,
             rank=config.das_dimension,
             rms_norm_eps=config.rms_norm_eps,
+            dropout=config.attention_dropout,
         )
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
@@ -555,10 +558,10 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         self.layerwise_embeddings = None
 
-    def train(self: T_Learned, mode: bool = True) -> T_Learned:
+    def train(self: T_Reft, mode: bool = True) -> T_Reft:
         return self.hypernetwork.train(mode)
 
-    def eval(self: T_Learned) -> T_Learned:
+    def eval(self: T_Reft) -> T_Reft:
         return self.hypernetwork.eval()
 
     def load_state_dict(
@@ -601,13 +604,36 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         base_intervention_mask: Optional[torch.Tensor] = None,
         base_hidden_states: Optional[torch.Tensor] = None,
         base_position_ids: Optional[torch.Tensor] = None,
-        intervention_layer: Optional[int] = None,
+        intervention_layers: Optional[List[int]] = None,
+        intervention_positions: Optional[torch.LongTensor] = None,
         base_intervention_weight: Optional[torch.Tensor] = None,
         run_weight_generation: bool = True,
         **kwargs,
     ) -> InterpretorModelOutput:
-        if intervention_layer is None:
-            intervention_layer = self.config.intervention_layer
+        if intervention_layers is None:
+            intervention_layers = self.config.intervention_layer
+
+        if intervention_positions is None:
+            intervention_positions = (
+                torch.arange(
+                    self.config.num_target_positions, device=editor_input_ids.device
+                )
+                .unsqueeze(0)
+                .expand(editor_input_ids.shape[0], -1)
+            )
+
+        if isinstance(intervention_layers, int):
+            intervention_layers = (
+                torch.LongTensor([intervention_layers])
+                .unsqueeze(0)
+                .expand(editor_input_ids.shape[0], -1)
+            )
+        elif isinstance(intervention_layers, list):
+            intervention_layers = (
+                torch.LongTensor(intervention_layers)
+                .unsqueeze(0)
+                .expand(editor_input_ids.shape[0], -1)
+            )
 
         if base_position_ids is None:
             # -1 for all the padding tokens and start from 0 for the rest
@@ -676,67 +702,52 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             use_cache=False,
         )
 
-        if base_intervention_weight is None:
-            base_intervention_weight = interpretor_output[1]
-        else:
-            base_intervention_weight = base_intervention_weight.to(
-                interpretor_output[1].dtype
-            )
-
         hypernet_hidden_states = interpretor_output[0]
 
-        if run_weight_generation:
-            pass
-            # TODO: run hypernetwork to generate ReFT weights
-
-            # TODO: create ReFT parameters by patching the das module weights
+        if run_weight_generation and hasattr(self.das_module, "set_batch_parameters"):
+            # run hypernetwork to generate ReFT weights
+            # each of shape (B, L, P, H, R)
+            rotation_matrix, weight_matrix = self.reft_generator(
+                hypernet_hidden_states, intervention_layers, intervention_positions
+            )
+        else:
+            rotation_matrix, weight_matrix = None, None
 
         # print(source_intervention[0])
         metrics = {}
 
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
-        def representation_swap(module, input, output):
+        def representation_swap(module, input, output, current_layer=0):
             base_hidden_states = output[0].clone()
-
-            # print(base_hidden_states[0, 18, :])
-            # print(source_hidden_states[0, 6, :])
 
             nonlocal metrics
 
-            if self.use_das_intervention:
-                hidden_dim = base_hidden_states.shape[-1]
-                base_hidden_states_weight = base_intervention_weight.unsqueeze(
-                    -1
-                ).repeat(1, 1, hidden_dim)
+            layer_rotation_matrix = rotation_matrix[:, current_layer]
+            layer_weight_matrix = weight_matrix[:, current_layer]
+            self.das_module.set_batch_parameters(
+                layer_rotation_matrix, layer_weight_matrix
+            )
 
-                if self.das_selective_subspace:
-                    intervention_output = self.das_module(
-                        base_hidden_states, hidden_states=hypernet_hidden_states
-                    )
-                    mixed_output = intervention_output.mixed_output
-                    mixed_output = mixed_output * base_hidden_states_weight
-                else:
-                    intervention_output = self.das_module(base_hidden_states)
-                    mixed_output = intervention_output.mixed_output
-                    mixed_output = mixed_output * base_hidden_states_weight
-
-                if isinstance(mixed_output, InterventionModuleOutput):
-                    metrics = intervention_output.metrics
-
-                output[0][:] += mixed_output
-            else:
-                raise NotImplementedError("Only DAS is implemented")
+            intervention_output = self.das_module(
+                base_hidden_states, hidden_states=hypernet_hidden_states
+            )
+            mixed_output = intervention_output.mixed_output
+            metrics = intervention_output.metrics
+            output[0][:] += mixed_output
 
         # Now editing the target model
-        if intervention_layer == 0:
+        if intervention_layers is None:
             raise ValueError("Cannot intervene at layer 0")
         else:
             hooks = [
                 (
-                    self.target_model.model.layers[intervention_layer - 1],
-                    representation_swap,
+                    self.target_model.model.layers[layer_idx - 1],
+                    partial(representation_swap, current_layer=layer_idx),
                 )
+                for layer_idx in intervention_layers[
+                    0
+                ].unique()  # take first batch since identical
             ]
 
         with add_fwd_hooks(hooks):

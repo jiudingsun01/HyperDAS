@@ -1,7 +1,9 @@
 defaults:
   - base
-  - _self_  # Ensure dataset-specific configs override base
+  - _self_ # Ensure dataset-specific configs override base
 
-train_path: ""
+train_path: "assets/data/prod_2b_l20_v1/generate"
 test_path: ""
 dataset_type: axbench
+axbench_mode: steering
+split_by: concept

@@ -19,11 +19,18 @@ from ..das_utils import QuasiProjectiveIntervention
 from ..utils import InterpretorModelOutput, NamedDataLoader
 from .modules import (
     LlamaInterpretor,
+    LlamaInterpretorForReFTGeneration,
     LlamaInterpretorWithLearnedSource,
     LlamaInterpretorConfig,
 )
 
 logger = get_logger(__name__)
+
+INTERPRETOR_CLS = {
+    "regular": LlamaInterpretor,
+    "learned_source": LlamaInterpretorWithLearnedSource,
+    "reft": LlamaInterpretorForReFTGeneration,
+}
 
 
 class RavelInterpretorHypernetwork(nn.Module):
@@ -82,14 +89,13 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.selection_mechanism = config.model.selection_mechanism
         self.interpretor_config.hat_matrix = config.model.hat_matrix
 
+        # Reft parameters
+        self.interpretor_config.target_hidden_size = config.model.target_hidden_size
+        self.interpretor_config.num_target_layers = config.model.num_target_layers
+        self.interpretor_config.num_target_positions = config.model.num_target_positions
+
         # Initialize model components
-        interpretor_cls = (
-            LlamaInterpretorWithLearnedSource
-            if config.model.intepretor_type == "learned_source"
-            else LlamaInterpretor
-            if config.model.intepretor_type == "regular"
-            else None
-        )
+        interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
         if interpretor_cls is None:
             raise ValueError("Invalid interpretor type")
         self.interpretor = interpretor_cls(
@@ -646,46 +652,49 @@ class RavelInterpretorHypernetwork(nn.Module):
                         break
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
-                            # Evaluate the model
-                            for mode in inference_modes:
-                                accuracies, test_loss, _ = self.eval_accuracy(
-                                    test_loader,
-                                    inference_mode=mode,
-                                    eval_n_label_tokens=3,
-                                )
+                            if self.config.dataset.dataset_type == "ravel":
+                                # Evaluate the model
+                                for mode in inference_modes:
+                                    accuracies, test_loss, _ = self.eval_accuracy(
+                                        test_loader,
+                                        inference_mode=mode,
+                                        eval_n_label_tokens=3,
+                                    )
 
-                                text_mode = "default" if mode is None else mode
+                                    text_mode = "default" if mode is None else mode
 
-                                for loader in test_loader:
-                                    causal_acc = accuracies[loader.name]["causal"]
-                                    isolate_acc = accuracies[loader.name]["isolate"]
-                                    disentangle_acc = accuracies[loader.name][
-                                        "disentangle"
-                                    ]
+                                    for loader in test_loader:
+                                        causal_acc = accuracies[loader.name]["causal"]
+                                        isolate_acc = accuracies[loader.name]["isolate"]
+                                        disentangle_acc = accuracies[loader.name][
+                                            "disentangle"
+                                        ]
 
-                                    if wandb.run:
-                                        wandb.log(
-                                            {
-                                                f"{loader.name}/{text_mode}_test_average_loss": test_loss,
-                                                f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
-                                                f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
-                                                f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
-                                            }
+                                        if wandb.run:
+                                            wandb.log(
+                                                {
+                                                    f"{loader.name}/{text_mode}_test_average_loss": test_loss,
+                                                    f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
+                                                    f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
+                                                    f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
+                                                }
+                                            )
+
+                                        logger.info(
+                                            "[%s] Under Inference Mode: %s",
+                                            loader.name,
+                                            text_mode,
                                         )
-
-                                    logger.info(
-                                        "[%s] Under Inference Mode: %s",
-                                        loader.name,
-                                        text_mode,
-                                    )
-                                    logger.info(
-                                        "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
-                                        loader.name,
-                                        disentangle_acc,
-                                        causal_acc,
-                                        isolate_acc,
-                                        test_loss[loader.name],
-                                    )
+                                        logger.info(
+                                            "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
+                                            loader.name,
+                                            disentangle_acc,
+                                            causal_acc,
+                                            isolate_acc,
+                                            test_loss[loader.name],
+                                        )
+                            elif self.config.dataset.dataset_type == "axbench":
+                                raise NotImplementedError
 
                     if checkpoint_per_steps is not None:
                         if (
