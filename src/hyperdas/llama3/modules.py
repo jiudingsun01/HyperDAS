@@ -30,6 +30,7 @@ from .layers import (
 
 from ..reft_utils import (
     LoreftIntervention,
+    ReFTHypernetwork,
     SelectiveLoreftIntervention,
     SteeringVecLoreftIntervention,
 )
@@ -105,6 +106,10 @@ class LlamaInterpretorConfig(LlamaConfig):
     hat_matrix: bool = False
     # Other
     freeze_das_module: List[str] = None
+    # For reft generation
+    target_hidden_size: int = None
+    num_target_layers: int = None
+    num_target_positions: int = None
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -469,6 +474,291 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         # (output, present[,attentions])
         return hidden_states, base_attn_weight
         # return base_hidden_states, source_attn_weight, base_attn_weight
+
+
+class LlamaInterpretorForReFTGeneration(nn.Module):
+    def __init__(
+        self,
+        config: LlamaInterpretorConfig,
+        target_model_name_or_path,
+        subspace_module=None,
+        compute_metrics=False,
+        device="cuda",
+    ):
+        super().__init__()
+
+        self.config = config
+        self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+        self.reft_generator = ReFTHypernetwork(
+            hidden_size=config.hidden_size,
+            target_hidden_size=config.target_hidden_size,
+            num_target_layers=config.num_target_layers,
+            num_target_positions=config.num_target_positions,
+            intermediate_size=config.intermediate_size,
+            rank=config.das_dimension,
+            rms_norm_eps=config.rms_norm_eps,
+        )
+        self.target_model = AutoModelForCausalLM.from_pretrained(
+            target_model_name_or_path,
+            torch_dtype=config.torch_dtype,
+            device_map={"": device},
+        )
+
+        self.use_das_intervention = subspace_module is not None
+        self.das_selective_subspace = subspace_module in [
+            "SelectiveLoReFT",
+            "SteeringVec",
+        ]
+
+        if self.use_das_intervention:
+            if subspace_module == "LoReFT":
+                self.das_module = LoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size,
+                    low_rank_dimension=config.das_dimension,
+                    dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
+                )
+            elif subspace_module == "SelectiveLoReFT":
+                self.das_module = SelectiveLoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size,
+                    low_rank_dimension=config.das_dimension,
+                    dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
+                )
+            elif subspace_module == "SteeringVec":
+                self.das_module = SteeringVecLoreftIntervention(
+                    embed_dim=self.target_model.config.hidden_size,
+                    low_rank_dimension=config.das_dimension,
+                    dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
+                )
+            else:
+                raise ValueError("Invalid subspace module")
+
+        self.das_module = self.das_module.to(device)
+
+        # freeze target model
+        for param in self.target_model.parameters():
+            param.requires_grad = False
+
+        assign_layer_indices(self.target_model)
+
+        """if config.use_layerwise_embeddings:
+            # extra layer is cross-attn in the lm_head
+            self.layerwise_embeddings = nn.Parameter(
+                torch.zeros(config.n_layer + 1, config.n_embd), requires_grad=True
+            )
+            self.layerwise_embeddings.data.normal_(
+                mean=0.0, std=self.target_model.config.initializer_range
+            )
+        else:"""
+
+        self.layerwise_embeddings = None
+
+    def train(self: T_Learned, mode: bool = True) -> T_Learned:
+        return self.hypernetwork.train(mode)
+
+    def eval(self: T_Learned) -> T_Learned:
+        return self.hypernetwork.eval()
+
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ):
+        """Only load weights for the trainable hypernetwork."""
+        self.hypernetwork.load_state_dict(state_dict, strict=strict, assign=assign)
+
+    @torch.no_grad()
+    def _run_target_model_for_encoded_hidden_states(
+        self,
+        target_input_ids: torch.LongTensor,
+        target_attention_mask: torch.BoolTensor,
+        position_ids: Optional[torch.LongTensor] = None,
+    ) -> Tuple[torch.FloatTensor, ...]:
+        """Gets the hidden states from the target model, if necessary"""
+
+        if position_ids is not None:
+            outputs = self.target_model(
+                input_ids=target_input_ids,
+                attention_mask=target_attention_mask,
+                position_ids=position_ids,
+                output_hidden_states=True,
+            )
+        else:
+            outputs = self.target_model(
+                input_ids=target_input_ids,
+                attention_mask=target_attention_mask,
+                output_hidden_states=True,
+            )
+
+        return outputs.hidden_states
+
+    def forward(
+        self,
+        editor_input_ids: Optional[torch.Tensor] = None,
+        editor_attention_mask: Optional[torch.Tensor] = None,
+        base_input_ids: Optional[torch.Tensor] = None,
+        base_attention_mask: Optional[torch.Tensor] = None,
+        base_intervention_mask: Optional[torch.Tensor] = None,
+        base_hidden_states: Optional[torch.Tensor] = None,
+        base_position_ids: Optional[torch.Tensor] = None,
+        intervention_layer: Optional[int] = None,
+        base_intervention_weight: Optional[torch.Tensor] = None,
+        run_weight_generation: bool = True,
+        **kwargs,
+    ) -> InterpretorModelOutput:
+        if intervention_layer is None:
+            intervention_layer = self.config.intervention_layer
+
+        if base_position_ids is None:
+            # -1 for all the padding tokens and start from 0 for the rest
+            base_position_ids = (
+                torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
+            )
+
+        # Run target model for encoded hidden states
+        if base_hidden_states is None:
+            base_hidden_states = torch.stack(
+                self._run_target_model_for_encoded_hidden_states(
+                    base_input_ids, base_attention_mask, base_position_ids
+                ),  # seems to break while we are passing thru batch_size=1; the last (12th =) has different dimensions
+                dim=2,
+            )
+
+        if base_intervention_mask is None:
+            if base_attention_mask is not None:
+                base_intervention_mask = base_attention_mask.clone()
+            else:
+                base_intervention_mask = torch.ones_like(base_input_ids)
+
+        # dimensions of target_hidden_states:
+        # batch_size, token_sequence_length, num_layers = 13, resid_width = 768
+        # Normalize along the last dimension
+        base_normalization_factors = base_hidden_states.norm(dim=-1, keepdim=True)
+        base_hidden_states = base_hidden_states / base_normalization_factors
+
+        if (base_intervention_mask.sum(dim=-1) == 0).any():
+            tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+            print("base_intervention_mask has zero row")
+            zero_row_idx = (base_intervention_mask.sum(dim=-1) == 0).nonzero(
+                as_tuple=True
+            )[0]
+            print(base_input_ids[zero_row_idx], zero_row_idx)
+            print("Full sentence: ", tokenizer.decode(base_input_ids[zero_row_idx][0]))
+            print("Attention mask: ", base_attention_mask[zero_row_idx][0])
+            print(base_intervention_mask[zero_row_idx][0])
+            raise
+
+        n_layer = base_hidden_states.shape[2]
+
+        collapsed_base_hidden_states = base_hidden_states.reshape(
+            base_hidden_states.shape[0],
+            base_hidden_states.shape[1] * base_hidden_states.shape[2],
+            base_hidden_states.shape[3],
+        )
+
+        collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(
+            1, 1, n_layer
+        )
+        collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
+            base_intervention_mask.shape[0],
+            base_intervention_mask.shape[1] * n_layer,
+        )
+
+        inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
+        editor_input_ids = None
+
+        interpretor_output = self.hypernetwork(
+            input_ids=editor_input_ids,
+            inputs_embeds=inputs_embeds,
+            attention_mask=editor_attention_mask,
+            base_encoder_hidden_states=collapsed_base_hidden_states,
+            base_encoder_attention_mask=collapsed_base_attention_mask,
+            use_cache=False,
+        )
+
+        if base_intervention_weight is None:
+            base_intervention_weight = interpretor_output[1]
+        else:
+            base_intervention_weight = base_intervention_weight.to(
+                interpretor_output[1].dtype
+            )
+
+        hypernet_hidden_states = interpretor_output[0]
+
+        if run_weight_generation:
+            pass
+            # TODO: run hypernetwork to generate ReFT weights
+
+            # TODO: create ReFT parameters by patching the das module weights
+
+        # print(source_intervention[0])
+        metrics = {}
+
+        # Run target model with edit vectors.
+        # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
+        def representation_swap(module, input, output):
+            base_hidden_states = output[0].clone()
+
+            # print(base_hidden_states[0, 18, :])
+            # print(source_hidden_states[0, 6, :])
+
+            nonlocal metrics
+
+            if self.use_das_intervention:
+                hidden_dim = base_hidden_states.shape[-1]
+                base_hidden_states_weight = base_intervention_weight.unsqueeze(
+                    -1
+                ).repeat(1, 1, hidden_dim)
+
+                if self.das_selective_subspace:
+                    intervention_output = self.das_module(
+                        base_hidden_states, hidden_states=hypernet_hidden_states
+                    )
+                    mixed_output = intervention_output.mixed_output
+                    mixed_output = mixed_output * base_hidden_states_weight
+                else:
+                    intervention_output = self.das_module(base_hidden_states)
+                    mixed_output = intervention_output.mixed_output
+                    mixed_output = mixed_output * base_hidden_states_weight
+
+                if isinstance(mixed_output, InterventionModuleOutput):
+                    metrics = intervention_output.metrics
+
+                output[0][:] += mixed_output
+            else:
+                raise NotImplementedError("Only DAS is implemented")
+
+        # Now editing the target model
+        if intervention_layer == 0:
+            raise ValueError("Cannot intervene at layer 0")
+        else:
+            hooks = [
+                (
+                    self.target_model.model.layers[intervention_layer - 1],
+                    representation_swap,
+                )
+            ]
+
+        with add_fwd_hooks(hooks):
+            # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
+            # THE END OF `layer` AS A SIDE EFFECT)
+            target_result = self.target_model(
+                input_ids=base_input_ids,
+                attention_mask=base_attention_mask,
+                position_ids=base_position_ids,
+                output_hidden_states=True,
+            )
+
+        logits = target_result.logits
+
+        output = InterpretorModelOutputWithLearnedSource(
+            logits=logits,
+            base_intervention_weight=base_intervention_weight,
+            target_hidden_states=target_result.hidden_states,
+        )
+        output.metrics = metrics
+
+        return output
 
 
 class LlamaInterpretorWithLearnedSource(nn.Module):

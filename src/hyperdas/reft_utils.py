@@ -1,17 +1,88 @@
-from pyvene import (
-    SourcelessIntervention,
-    TrainableIntervention,
-    DistributedRepresentationIntervention,
-)
-
-from transformers.models.llama.modeling_llama import LlamaRMSNorm
+from collections import OrderedDict
+from typing import Tuple
 
 import torch
 import torch.nn as nn
 from transformers.activations import ACT2FN
-from collections import OrderedDict
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
+from pyvene import (
+    DistributedRepresentationIntervention,
+    SourcelessIntervention,
+    TrainableIntervention,
+)
 
 from .utils import InterventionModuleOutput
+
+
+class ReFTHypernetwork(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        target_hidden_size: int,
+        num_target_layers: int,
+        num_target_positions: int,
+        intermediate_size: int,
+        rank: int,
+        rms_norm_eps: float = 1e-6,
+        dropout: float = 0.05,
+    ) -> None:
+        """
+        Run once for each target layer for applying the ReFT in the target network.
+        Or batch layers together (more memory intensive).
+        """
+        super().__init__()
+        self.embed_dim = hidden_size
+        self.target_embed_dim = target_hidden_size
+        self.num_target_layers = num_target_layers
+        self.position_encoder = nn.Sequential(
+            nn.Embedding(num_target_positions, hidden_size),
+            nn.LayerNorm(hidden_size, eps=rms_norm_eps),
+        )
+        self.layer_encoder = nn.Sequential(
+            nn.Embedding(num_target_layers, hidden_size),
+            nn.LayerNorm(hidden_size, eps=rms_norm_eps),
+        )
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, intermediate_size),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(intermediate_size, hidden_size),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+        )
+        self.weight_head = nn.Linear(
+            hidden_size, target_hidden_size * rank * num_target_positions
+        )
+        self.rotate_head = nn.Linear(
+            hidden_size, target_hidden_size * rank * num_target_positions
+        )
+
+    def forward(
+        self,
+        task_encoding: torch.Tensor,
+        layer_indices: torch.LongTensor,
+        position_indices: torch.LongTensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            task_encoding: Tensor of shape (batch_size, hidden_size) containing task embeddings
+            layer_indices: LongTensor of shape (batch_size,) containing target layer indices
+            position_indices: LongTensor of shape (batch_size,) containing position indices
+
+        Returns:
+            Tuple of (weight_matrix, rotation_matrix) of shape (batch_size, target_hidden_size, num_target_layers)
+        """
+        pos_emb = self.position_encoder(position_indices)
+        layer_emb = self.layer_encoder(layer_indices)
+        out = self.mlp(task_encoding + layer_emb + pos_emb)
+        rotation_matrix = self.rotate_head(out).reshape(
+            -1, self.target_embed_dim, self.num_target_layers
+        )
+        weight_matrix = self.weight_head(out).reshape(
+            -1, self.target_embed_dim, self.num_target_layers
+        )
+        return weight_matrix, rotation_matrix
 
 
 class HiddenStatesProjectionMLP(nn.Module):
