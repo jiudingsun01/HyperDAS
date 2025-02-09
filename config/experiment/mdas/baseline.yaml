@@ -1,0 +1,23 @@
+defaults:
+  - /model/llama3_8b
+  - /dataset/country
+  - /training/base
+  - /loss/base
+  - /wandb_config/base
+  - _self_
+
+model:
+  intervention_layer: 15
+  das_dimension: 128
+  intervention_location: "last_entity_token"
+
+training:
+  n_epochs: 5
+  lr: 1e-4
+  causal_loss_weight: 1.0
+  eval_per_steps: 100
+  save_model: false
+
+wandb_config:
+  log: true
+  group: mdas_country_baseline

@@ -1,0 +1,7 @@
+causal_loss_weight: 3.5
+iso_loss_weight: 1.0
+source_selection_sparsity_loss: false
+target_intervention_num: null
+sparsity:
+  apply: false
+  weight: 1.0

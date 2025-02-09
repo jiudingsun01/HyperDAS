@@ -1,0 +1,7 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
+train_path: ""
+test_path: ""
+dataset_type: axbench

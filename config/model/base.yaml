@@ -1,0 +1,26 @@
+# Base model parameters
+name_or_path: "meta-llama/Meta-Llama-3-8B"
+target_model_name_or_path: "meta-llama/Meta-Llama-3-8B"
+initialize_from_scratch: false
+intervention_layer: 15
+das_dimension: 128
+num_editing_heads: 32
+num_decoders: 8
+subspace_module: null
+
+dict_size: null
+selection_mechanism: null
+orthogonal_init: false
+ridge_parameterization: null
+scoring_dimension: 8
+return_penalty: false
+freeze_das_module: false
+inference_modes: ["default"]
+lambda_parameter: 1e-3
+ablate_base_token_attention: false
+ablate_source_token_attention: false
+break_asymmetric: false
+importance_power: -2
+epsilon: 1e-6
+hat_matrix: false
+intepretor_type: "regular"

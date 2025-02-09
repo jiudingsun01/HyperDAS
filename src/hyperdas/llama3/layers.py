@@ -1,9 +1,8 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 import warnings
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
     LlamaConfig,
@@ -11,7 +10,7 @@ from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer,
     LlamaMLP,
     apply_rotary_pos_emb,
-    repeat_kv
+    repeat_kv,
 )
 
 import math
@@ -25,7 +24,12 @@ from ..utils import apply_rotary_pos_emb_single_attn
 class LlamaAttentionWithCrossAttention(LlamaAttention):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: LlamaConfig, layer_idx: Optional[int] = None, is_cross_attention=False):
+    def __init__(
+        self,
+        config: LlamaConfig,
+        layer_idx: Optional[int] = None,
+        is_cross_attention=False,
+    ):
         super().__init__(config=config, layer_idx=layer_idx)
         self.is_cross_attention = is_cross_attention
         self.num_target_model_layers = config.num_target_model_layers
@@ -38,8 +42,7 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
         attention_mask = attention_mask.masked_fill_(attention_mask == 0, dtype_min)
         attention_mask = attention_mask.masked_fill_(attention_mask == 1, 0.0)
         return attention_mask
-        
-        
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -53,74 +56,110 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        bsz, q_len, _ = hidden_states.size()    
+        bsz, q_len, _ = hidden_states.size()
         _, kv_len, _ = encoder_hidden_states.size()
-        
-        
-        
+
         # encoder_hidden_states (bsz, base_sentence_length * layers_num, hs)
 
         if self.config.pretraining_tp > 1:
-            key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
+            key_value_slicing = (
+                self.num_key_value_heads * self.head_dim
+            ) // self.config.pretraining_tp
             query_slices = self.q_proj.weight.split(
                 (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
             key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
             value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
-            
-            query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)]
+
+            query_states = [
+                F.linear(hidden_states, query_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             query_states = torch.cat(query_states, dim=-1)
-            
+
             if self.is_cross_attention:
-                assert encoder_hidden_states is not None, "Cross attention requires encoder_hidden_states"
-                key_states = [F.linear(encoder_hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)]
-                value_states = [F.linear(encoder_hidden_states, value_slices[i]) for i in range(self.config.pretraining_tp)]
-                kv_position_ids = torch.arange(kv_len, device=hidden_states.device).unsqueeze(0).expand(bsz, -1)
+                assert (
+                    encoder_hidden_states is not None
+                ), "Cross attention requires encoder_hidden_states"
+                key_states = [
+                    F.linear(encoder_hidden_states, key_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+                value_states = [
+                    F.linear(encoder_hidden_states, value_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+                kv_position_ids = (
+                    torch.arange(kv_len, device=hidden_states.device)
+                    .unsqueeze(0)
+                    .expand(bsz, -1)
+                )
             else:
-                key_states = [F.linear(hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)]
-                value_states = [F.linear(hidden_states, value_slices[i]) for i in range(self.config.pretraining_tp)]
-                
+                key_states = [
+                    F.linear(hidden_states, key_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+                value_states = [
+                    F.linear(hidden_states, value_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+
             key_states = torch.cat(key_states, dim=-1)
             value_states = torch.cat(value_states, dim=-1)
         else:
             query_states = self.q_proj(hidden_states)
             if self.is_cross_attention:
-                assert encoder_hidden_states is not None, "Cross attention requires encoder_hidden_states"
+                assert (
+                    encoder_hidden_states is not None
+                ), "Cross attention requires encoder_hidden_states"
                 key_states = self.k_proj(encoder_hidden_states)
                 value_states = self.v_proj(encoder_hidden_states)
                 # give 0 to the padding position and start from 1 for the rest
-                kv_position_ids = torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
+                kv_position_ids = (
+                    torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
+                )
             else:
                 key_states = self.k_proj(hidden_states)
                 value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, kv_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, kv_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(
+            bsz, q_len, self.num_heads, self.head_dim
+        ).transpose(1, 2)
+        key_states = key_states.view(
+            bsz, kv_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
+        value_states = value_states.view(
+            bsz, kv_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
 
         past_key_value = getattr(self, "past_key_value", past_key_value)
-        
+
         if self.is_cross_attention:
             q_cos, q_sin = self.rotary_emb(query_states, position_ids)
             query_states = apply_rotary_pos_emb_single_attn(query_states, q_cos, q_sin)
             kv_cos, kv_sin = self.rotary_emb(value_states, kv_position_ids)
             key_states = apply_rotary_pos_emb_single_attn(key_states, kv_cos, kv_sin)
-            
+
             kv_position_ids.view(self.num_target_model_layers + 1, -1)
         else:
             cos, sin = self.rotary_emb(value_states, position_ids)
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-            
+            query_states, key_states = apply_rotary_pos_emb(
+                query_states, key_states, cos, sin
+            )
+
         if past_key_value is not None:
-            
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {}
-            key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+            key_states, value_states = past_key_value.update(
+                key_states, value_states, self.layer_idx, cache_kwargs
+            )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
-        
-        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+        attn_weights = torch.matmul(
+            query_states, key_states.transpose(2, 3)
+        ) / math.sqrt(self.head_dim)
 
         # no matter the length, we just slice it
         if attention_mask is not None:
@@ -129,23 +168,31 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
                 attn_weights = attn_weights + causal_mask
             else:
                 # Take the attention mask of the last token to recover the oroginal (not causal) attention
-                attention_mask = attention_mask[:, :, -1, :].unsqueeze(-2).repeat(1, 1, kv_len, 1)
+                attention_mask = (
+                    attention_mask[:, :, -1, :].unsqueeze(-2).repeat(1, 1, kv_len, 1)
+                )
                 attention_mask = torch.transpose(attention_mask, -1, -2)
                 attn_weights = attn_weights + attention_mask
-        
+
         if encoder_attention_mask is not None:
-            encoder_attention_mask = self._update_encoder_attention_mask(encoder_attention_mask, attn_weights)
+            encoder_attention_mask = self._update_encoder_attention_mask(
+                encoder_attention_mask, attn_weights
+            )
             encoder_attention_mask = encoder_attention_mask.repeat(1, q_len, 1)
             attn_weights = attn_weights + encoder_attention_mask.unsqueeze(1)
             attn_weights = torch.clamp(
-                attn_weights, 
-                min=torch.finfo(attn_weights.dtype).min, 
-                max=torch.finfo(attn_weights.dtype).max
-            ) # clamp the position where attention_mask and encoder_attention_mask are both applied
-        
+                attn_weights,
+                min=torch.finfo(attn_weights.dtype).min,
+                max=torch.finfo(attn_weights.dtype).max,
+            )  # clamp the position where attention_mask and encoder_attention_mask are both applied
+
         # upcast attention to fp32
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(query_states.dtype)
+        attn_weights = nn.functional.dropout(
+            attn_weights, p=self.attention_dropout, training=self.training
+        )
         attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
@@ -159,9 +206,18 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
         if self.config.pretraining_tp > 1:
-            attn_output = attn_output.split(self.hidden_size // self.config.pretraining_tp, dim=2)
-            o_proj_slices = self.o_proj.weight.split(self.hidden_size // self.config.pretraining_tp, dim=1)
-            attn_output = sum([F.linear(attn_output[i], o_proj_slices[i]) for i in range(self.config.pretraining_tp)])
+            attn_output = attn_output.split(
+                self.hidden_size // self.config.pretraining_tp, dim=2
+            )
+            o_proj_slices = self.o_proj.weight.split(
+                self.hidden_size // self.config.pretraining_tp, dim=1
+            )
+            attn_output = sum(
+                [
+                    F.linear(attn_output[i], o_proj_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+            )
         else:
             attn_output = self.o_proj(attn_output)
 
@@ -174,11 +230,17 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
 class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        
-        self.cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-        self.cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+        self.cross_attn = LlamaAttentionWithCrossAttention(
+            config=config, layer_idx=layer_idx, is_cross_attention=True
+        )
+        self.cross_attn_input_layernorm = LlamaRMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
         self.cross_attn_mlp = LlamaMLP(config)
-        self.post_cross_attn_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_cross_attn_layernorm = LlamaRMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     def forward(
         self,
@@ -193,7 +255,9 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+    ) -> Tuple[
+        torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]
+    ]:
         """
         Args:
             hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -213,7 +277,7 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
 
-        residual = hidden_states    
+        residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
 
@@ -228,14 +292,13 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             cache_position=cache_position,
             **kwargs,
         )
-        hidden_states = residual + hidden_states    
+        hidden_states = residual + hidden_states
 
         if base_encoder_hidden_states is not None:
-            
             residual = hidden_states
-            
+
             hidden_states = self.cross_attn_input_layernorm(hidden_states)
-            
+
             cross_attn_outputs, _, _ = self.cross_attn(
                 hidden_states=hidden_states,
                 attention_mask=attention_mask,
@@ -248,18 +311,18 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
                 cache_position=cache_position,
                 **kwargs,
             )
-            
+
             hidden_states = residual + cross_attn_outputs
-            
+
         # Fully Connected
         residual = hidden_states
-        
+
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
-        
+
         if output_attentions:
             outputs += (self_attn_weights,)
 
@@ -267,15 +330,15 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             outputs += (present_key_value,)
 
         return outputs
-    
-    
+
+
 class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
     _flash_attn_enabled = False
-    
+
     def __init__(self, config, layer_idx=None):
         super().__init__(config, layer_idx, True)
         self.intervention_layer = config.intervention_layer
-        
+
     def _update_encoder_attention_mask(self, attention_mask, attn_weights):
         attention_mask = attention_mask.unsqueeze(1)
         dtype = attn_weights.dtype
@@ -284,7 +347,7 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         attention_mask = attention_mask.masked_fill_(attention_mask == 0, dtype_min)
         attention_mask = attention_mask.masked_fill_(attention_mask == 1, 0.0)
         return attention_mask
-        
+
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
@@ -296,82 +359,114 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        
         n_layers = self.config.num_target_model_layers + 1
         n_tokens = encoder_attention_mask.shape[-1] // n_layers
-        
+
         batch_size = encoder_attention_mask.shape[0]
-        
-        encoder_attention_mask = encoder_attention_mask.reshape(batch_size, n_tokens, n_layers)[:, :, self.intervention_layer]
-        
-        encoder_hidden_states = encoder_hidden_states.reshape(batch_size, n_tokens, n_layers, -1)[:, :, self.intervention_layer, :]
-        
+
+        encoder_attention_mask = encoder_attention_mask.reshape(
+            batch_size, n_tokens, n_layers
+        )[:, :, self.intervention_layer]
+
+        encoder_hidden_states = encoder_hidden_states.reshape(
+            batch_size, n_tokens, n_layers, -1
+        )[:, :, self.intervention_layer, :]
+
         bsz, q_len, _ = hidden_states.size()
         _, kv_len, _ = encoder_hidden_states.size()
-        
+
         if position_ids is None:
             if attention_mask is None:
-                position_ids = torch.arange(q_len, device=hidden_states.device).unsqueeze(0).expand(bsz, -1)
+                position_ids = (
+                    torch.arange(q_len, device=hidden_states.device)
+                    .unsqueeze(0)
+                    .expand(bsz, -1)
+                )
             else:
                 position_ids = torch.cumsum(attention_mask, dim=1) * attention_mask
-            
+
         if self.config.pretraining_tp > 1:
-            key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
+            key_value_slicing = (
+                self.num_key_value_heads * self.head_dim
+            ) // self.config.pretraining_tp
             query_slices = self.q_proj.weight.split(
                 (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
             key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
-            
-            assert encoder_hidden_states is not None, "Cross attention requires encoder_hidden_states"
-            query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)]
+
+            assert (
+                encoder_hidden_states is not None
+            ), "Cross attention requires encoder_hidden_states"
+            query_states = [
+                F.linear(hidden_states, query_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             query_states = torch.cat(query_states, dim=-1)
-            
-            key_position_ids = torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
-            key_states = [F.linear(encoder_hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)]
+
+            key_position_ids = (
+                torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
+            )
+            key_states = [
+                F.linear(encoder_hidden_states, key_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             key_states = torch.cat(key_states, dim=-1)
         else:
-            assert encoder_hidden_states is not None, "Cross attention requires encoder_hidden_states"
-            query_states = self.q_proj(hidden_states)    
+            assert (
+                encoder_hidden_states is not None
+            ), "Cross attention requires encoder_hidden_states"
+            query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(encoder_hidden_states)
-            key_position_ids = torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
+            key_position_ids = (
+                torch.cumsum(encoder_attention_mask, dim=1) * encoder_attention_mask
+            )
 
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, kv_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(
+            bsz, q_len, self.num_heads, self.head_dim
+        ).transpose(1, 2)
+        key_states = key_states.view(
+            bsz, kv_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
         past_key_value = getattr(self, "past_key_value", past_key_value)
-        
+
         q_cos, q_sin = self.rotary_emb(query_states, position_ids)
         query_states = apply_rotary_pos_emb_single_attn(query_states, q_cos, q_sin)
         kv_cos, kv_sin = self.rotary_emb(key_states, key_position_ids)
         key_states = apply_rotary_pos_emb_single_attn(key_states, kv_cos, kv_sin)
-            
+
         if past_key_value is not None:
             raise NotImplementedError
-            # sin and cos are specific to RoPE models; cache_position needed for the static cache
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-            key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+            # # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            # cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            # key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
-        
-        query_states = query_states[:, :, -1, :].unsqueeze(2) # Take the last token from the editor instruction
-        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
-        
 
+        query_states = query_states[:, :, -1, :].unsqueeze(
+            2
+        )  # Take the last token from the editor instruction
+        attn_weights = torch.matmul(
+            query_states, key_states.transpose(2, 3)
+        ) / math.sqrt(self.head_dim)
 
         """
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_weights = attn_weights + causal_mask
         """
-        
+
         # convert encoder attention mask from 1->0, 0->-inf to mask attention weights before softmax
-        encoder_attention_mask = self._update_encoder_attention_mask(encoder_attention_mask, attn_weights)
-                
+        encoder_attention_mask = self._update_encoder_attention_mask(
+            encoder_attention_mask, attn_weights
+        )
+
         attn_weights = attn_weights + encoder_attention_mask.unsqueeze(1)
         attn_weights = torch.mean(attn_weights, dim=1, keepdim=False)
         attn_weights = attn_weights.squeeze()
-        
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        
+
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(query_states.dtype)
 
         # return None, attn_weights, past_key_value
         return attn_weights

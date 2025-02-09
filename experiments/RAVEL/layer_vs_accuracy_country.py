@@ -1,20 +1,13 @@
 import sys
 
-sys.path.append('../..')
+sys.path.append("../..")
 
-from torch.utils.data import DataLoader
-from datasets import load_from_disk
-import torch
-from src.hyperdas.data_utils import generate_ravel_dataset, get_ravel_collate_fn, filter_dataset
 from train import run_experiment
-
-from transformers import AutoTokenizer, LlamaForCausalLM
 
 
 if __name__ == "__main__":
-    
     results = {}
-    
+
     for layer in range(1, 32, 2):
         run_experiment(
             log_wandb=True,
@@ -38,7 +31,5 @@ if __name__ == "__main__":
             checkpoint_per_steps=None,
             test_path="../../experiments/ravel/data/ravel_city_Country_test",
             train_path="../../experiments/ravel/data/ravel_city_Country_train",
-            causal_loss_weight=10
+            causal_loss_weight=10,
         )
-        
-        

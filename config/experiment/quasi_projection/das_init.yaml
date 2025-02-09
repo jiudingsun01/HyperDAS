@@ -1,0 +1,34 @@
+defaults:
+  - /model: llama3_8b
+  - /dataset: country_causal
+  - /training: base
+  - /loss: base
+  - /wandb_config: base
+  - _self_
+
+model:
+  subspace_module: "QuasiProjective"
+  das_dimension: 32
+  dict_size: 32
+  ridge_parameterization: inv_alpha
+  selection_mechanism: full
+  orthogonal_init: false
+  return_penalty: true
+  freeze_das_module: null
+
+training:
+  n_epochs: 1
+  n_steps: 500
+  eval_per_steps: 100
+  train_batch_size: 32
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+
+# Global parameters
+load_trained_from: "assets/checkpoints/ReflectSelect_20241029_161135/final_model"
+
+wandb_config:
+  group: quasi_das_init
+  notes: "continue training from das init"
+  log: true

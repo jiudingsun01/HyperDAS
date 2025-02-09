@@ -1,0 +1,23 @@
+n_epochs: 5
+n_steps: -1
+train_batch_size: 16
+test_batch_size: 64
+lr: 1e-4
+eval_per_steps: 100
+checkpoint_per_steps: null
+max_eval_steps: -1
+num_workers: 0
+seed: 42
+save_dir: "assets/checkpoints"
+compute_metrics: true
+debug_model: false
+save_model: false
+max_grad_norm: 4.0
+weight_decay: 0.01
+rotate_lr: 1e-3
+boundary_lr: 1e-2
+das_temperature_start: 50.0
+das_temperature_end: 0.1
+
+load_trained_from: null
+target_intervention_num: null

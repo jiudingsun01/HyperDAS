@@ -1,0 +1,10 @@
+defaults:
+  - base
+  - _self_
+
+name_or_path: "meta-llama/Meta-Llama-3-8B"
+target_model_name_or_path: "meta-llama/Meta-Llama-3-8B"
+das_dimension: 32
+num_editing_heads: 32
+num_decoders: 8
+chop_editor_at_layer: 15  # Make sure it's also here

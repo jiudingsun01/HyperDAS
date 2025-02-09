@@ -1,154 +1,212 @@
+import json
+import os
+from math import ceil
+from typing import List, Optional
+
+import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
-from.modules import LlamaInterpretorConfig, LlamaInterpretor
-from ..utils import InterpretorModelOutput
-from transformers import AutoTokenizer, AutoConfig
 import torch.nn as nn
 import torch.optim as optim
-import seaborn as sns
-import matplotlib.pyplot as plt
-import wandb
-import os
+from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
-import time
-import json
-import numpy as np
+from transformers import AutoTokenizer, AutoConfig
+
+import wandb
+from logger import get_logger
+
 from ..das_utils import QuasiProjectiveIntervention
+from ..utils import InterpretorModelOutput, NamedDataLoader
+from .modules import (
+    LlamaInterpretor,
+    LlamaInterpretorWithLearnedSource,
+    LlamaInterpretorConfig,
+)
+
+logger = get_logger(__name__)
 
 
 class RavelInterpretorHypernetwork(nn.Module):
-    # Separating the editor config file, from its base model's configurations
-    def __init__(
-        self,
-        model_name_or_path="meta-llama/Meta-Llama-3-8B",
-        target_model_name_or_path="meta-llama/Meta-Llama-3-8B",
-        num_editing_heads=32,
-        chop_editor_at_layer=8,
-        intervention_layer=0,
-        subspace_module="ReflectSelect",
-        torch_dtype=torch.bfloat16,
-        das_dimension=None,
-        initialize_from_scratch=False,
-    ):
+    def __init__(self, config: DictConfig, device):
         super().__init__()
 
-        self.interpretor_config = LlamaInterpretorConfig.from_pretrained(model_name_or_path)
-        self.interpretor_config.name_or_path = model_name_or_path
-        self.interpretor_config.torch_dtype = torch_dtype
-        self.interpretor_config.num_editing_heads = num_editing_heads
-        self.interpretor_config.chop_editor_at_layer = chop_editor_at_layer
-        self.interpretor_config.intervention_layer = intervention_layer
-        self.interpretor_config._attn_implementation = 'eager'
-        self.interpretor_config.initialize_from_scratch = initialize_from_scratch
-        
-        target_model_config = AutoConfig.from_pretrained(target_model_name_or_path)
-        self.interpretor_config.num_target_model_layers = target_model_config.num_hidden_layers
-        
-        if self.interpretor_config.hidden_size != target_model_config.hidden_size:
-            print(f"Changing the hidden size ({self.interpretor_config.hidden_size}) of the editor to match the target model's hidden size ({target_model_config.hidden_size})")
-            self.interpretor_config.hidden_size = target_model_config.hidden_size
-        
-        if self.interpretor_config.intermediate_size != target_model_config.intermediate_size:
-            print(f"Changing the intermediate size ({self.interpretor_config.intermediate_size}) of the editor to match the target model's intermediate size ({target_model_config.intermediate_size})")
-            self.interpretor_config.intermediate_size = target_model_config.intermediate_size
-            
-        if self.interpretor_config.num_attention_heads != target_model_config.num_attention_heads:
-            print(f"Changing the number of attention heads ({self.interpretor_config.num_attention_heads}) of the editor to match the target model's number of attention heads ({target_model_config.num_attention_heads})")
-            self.interpretor_config.num_attention_heads = target_model_config.num_attention_heads
-        
-        self.interpretor = LlamaInterpretor(
-            self.interpretor_config, 
-            target_model_name_or_path=target_model_name_or_path,
-            subspace_module=subspace_module, 
-            das_dimension=das_dimension,
+        self.config = config
+        self.device = device
+        self.interpretor_config: LlamaInterpretorConfig = (
+            LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
         )
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(target_model_name_or_path)
-        
-        if "llama" in model_name_or_path:
-            self.tokenizer.padding_side = "left"
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-        elif "gemma" in model_name_or_path:
-            self.tokenizer.padding_side = "right"
 
-        self.use_das_intervention = subspace_module != None
-        self.das_dim = das_dimension
+        # Basic model config
+        self.interpretor_config.name_or_path = config.model.name_or_path
+        self.interpretor_config.torch_dtype = torch.bfloat16
+        self.interpretor_config.intervention_layer = config.model.intervention_layer
+        self.interpretor_config._attn_implementation = "eager"
+
+        # Model architecture config
+        self.interpretor_config.num_editing_heads = config.model.num_editing_heads
+        self.interpretor_config.chop_editor_at_layer = config.model.num_decoders
+        self.interpretor_config.initialize_from_scratch = (
+            config.model.initialize_from_scratch
+        )
+        self.interpretor_config.das_dimension = config.model.das_dimension
+
+        # Target model configs
+        target_model_config = AutoConfig.from_pretrained(
+            config.model.target_model_name_or_path
+        )
+        self.interpretor_config.num_target_model_layers = (
+            target_model_config.num_hidden_layers
+        )
+
+        # Ablation configs
+        self.interpretor_config.ablate_base_token_attention = (
+            config.model.ablate_base_token_attention
+        )
+        self.interpretor_config.ablate_source_token_attention = (
+            config.model.ablate_source_token_attention
+        )
+        self.interpretor_config.break_asymmetric = config.model.break_asymmetric
+        self.interpretor_config.freeze_das_module = config.model.freeze_das_module
+
+        # Ridge/projective configs
+        self.interpretor_config.lambda_parameter = config.model.lambda_parameter
+        self.interpretor_config.importance_power = config.model.importance_power
+        self.interpretor_config.epsilon = config.model.epsilon
+        self.interpretor_config.ridge_parameterization = (
+            config.model.ridge_parameterization
+        )
+        self.interpretor_config.scoring_dimension = config.model.scoring_dimension
+        self.interpretor_config.return_penalty = config.model.return_penalty
+        self.interpretor_config.dict_size = config.model.dict_size
+        self.interpretor_config.orthogonal_init = config.model.orthogonal_init
+        self.interpretor_config.selection_mechanism = config.model.selection_mechanism
+        self.interpretor_config.hat_matrix = config.model.hat_matrix
+
+        # Initialize model components
+        interpretor_cls = (
+            LlamaInterpretorWithLearnedSource
+            if config.model.intepretor_type == "learned_source"
+            else LlamaInterpretor
+            if config.model.intepretor_type == "regular"
+            else None
+        )
+        if interpretor_cls is None:
+            raise ValueError("Invalid interpretor type")
+        self.interpretor = interpretor_cls(
+            self.interpretor_config,
+            target_model_name_or_path=config.model.target_model_name_or_path,
+            subspace_module=config.model.subspace_module,
+            compute_metrics=config.training.compute_metrics,
+            device=self.device,
+        )
+
+        # Tokenizer setup
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+        # DAS configs
+        self.use_das_intervention = config.model.subspace_module is not None
+        self.das_dim = config.model.das_dimension
+
+        # DAS Training Hyperparameters
+        self.rotate_lr = config.training.get("rotate_lr", 1e-3)
+        self.boundary_lr = config.training.get("boundary_lr", 1e-2)
+        self.das_temperature_start = config.training.get("das_temperature_start", 50.0)
+        self.das_temperature_end = config.training.get("das_temperature_end", 0.1)
+
+        # Other configs
         self.residual_cache = None
         self.opt = None
-        # self.training_loss = None
-        
-        # DAS Training Hyperparameters
-        self.rotate_lr = 1e-3
-        self.boundary_lr = 1e-2
-        self.das_temperature_start = 50.0
-        self.das_temperature_end = 0.1
-        
+        self.max_eval_steps = config.training.max_eval_steps
+
     def save_model(self, save_dir):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-            
-        torch.save(self.interpretor.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
+
+        torch.save(
+            self.interpretor.hypernetwork.state_dict(),
+            os.path.join(save_dir, "hypernetwork.pt"),
+        )
         if self.use_das_intervention:
-            torch.save(self.interpretor.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
-        
+            torch.save(
+                self.interpretor.das_module.state_dict(),
+                os.path.join(save_dir, "das.pt"),
+            )
+
     def load_model(self, load_dir):
-        self.interpretor.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
+        self.interpretor.hypernetwork.load_state_dict(
+            torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
+        )
         if self.use_das_intervention:
-            self.interpretor.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
-            
+            self.interpretor.das_module.load_state_dict(
+                torch.load(os.path.join(load_dir, "das.pt"), weights_only=True)
+            )
+
     def set_intervention_layer(self, intervention_layer):
         self.interpretor.config.intervention_layer = intervention_layer
-        
+
     def forward(
         self,
         editor_input_ids: torch.Tensor = None,
         base_input_ids: torch.Tensor = None,
         base_attention_mask: torch.Tensor = None,
         base_intervention_mask: torch.Tensor = None,
+        source_input_ids: torch.Tensor = None,
+        source_attention_mask: torch.Tensor = None,
+        source_intervention_mask: torch.Tensor = None,
         labels: torch.Tensor = None,
+        output_intervention_weight: bool = True,
         is_causal: torch.Tensor = None,
         causal_loss_weight: float = 1.0,
+        iso_loss_weight: float = 1.0,
+        source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
-    ):
-        
+    ) -> InterpretorModelOutput:
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
-            editor_attention_mask=editor_input_ids != self.interpretor_config.eos_token_id,
+            editor_attention_mask=editor_input_ids
+            != self.interpretor_config.eos_token_id,
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
+            source_input_ids=source_input_ids,
+            source_attention_mask=source_attention_mask,
+            source_intervention_mask=source_intervention_mask,
+            output_intervention_weight=output_intervention_weight,
+            source_intervention_weight=source_intervention_weight,
             base_intervention_weight=base_intervention_weight,
         )
-        
+
         if labels is not None:
             log_prob_predictions = torch.nn.functional.log_softmax(
                 _pred.logits.reshape(-1, _pred.logits.shape[-1]),
                 dim=1,
             )
-            
+
             if is_causal is not None:
                 loss_weight = torch.ones_like(labels, dtype=log_prob_predictions.dtype)
                 loss_weight[is_causal, :] = causal_loss_weight
-                loss_weight[~is_causal, :] = 1
-            
+                loss_weight[~is_causal, :] = iso_loss_weight
+
             labels = labels.reshape(-1)
-            
+
             if is_causal is not None:
                 loss_weight = loss_weight.reshape(-1)
 
             assert labels.shape == log_prob_predictions.shape[:-1]
-            
+
             # Only consider the tokens that are not -100 in target_labels
             label_indices = labels != -100
             output_idices = torch.zeros_like(label_indices)
             output_idices[:-1] = label_indices[1:]
-            
+
             log_prob_predictions = log_prob_predictions[output_idices, :]
-        
+
             labels = labels[label_indices]
-            
+
             # Compute the cross-entropy loss with masking
-            
             if is_causal is None:
                 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
                 loss = criterion(log_prob_predictions, labels.long())
@@ -156,280 +214,421 @@ class RavelInterpretorHypernetwork(nn.Module):
                 loss_weight = loss_weight[label_indices]
                 criterion = torch.nn.CrossEntropyLoss(reduction="none")
                 loss = criterion(log_prob_predictions, labels.long())
-                                
+
                 loss = (loss * loss_weight).mean()
-            
-            
+
             _pred["loss"] = loss
-        
+
         return _pred
-        
+
     # Generate text using the target model, with a new edit application at every step.
     # This is a very slow way to generate text.
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
     def inspect_batch_prediction_ouptuts(self, batch, eval_n_label_tokens=None):
-        
         self.interpretor.eval()
-        
+
         correct_idxs = []
-        
+
         with torch.no_grad():
-            
             predictions = self.forward(
-                editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                base_input_ids=batch["base_input_ids"].to("cuda"),
-                base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                labels=batch["labels"].to("cuda"),
-            )    
-            
+                editor_input_ids=batch["editor_input_ids"].to(self.device),
+                base_input_ids=batch["base_input_ids"].to(self.device),
+                base_attention_mask=batch["base_attention_mask"].to(self.device),
+                base_intervention_mask=batch["base_intervention_mask"].to(self.device),
+                source_input_ids=batch["source_input_ids"].to(self.device),
+                source_attention_mask=batch["source_attention_mask"].to(self.device),
+                source_intervention_mask=batch["source_intervention_mask"].to(
+                    self.device
+                ),
+                labels=batch["labels"].to(self.device),
+                output_intervention_weight=True,
+            )
+
             batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
-            batch_full_output = self.tokenizer.batch_decode(batch_pred_ids, skip_special_tokens=True)
-            
+            batch_full_output = self.tokenizer.batch_decode(
+                batch_pred_ids, skip_special_tokens=True
+            )
+
             batch_output = []
             correct = 0
-            
-            for i, (label, pred_ids) in enumerate(zip(batch["labels"].to("cuda"), batch_pred_ids)):
-                
+
+            for i, (label, pred_ids) in enumerate(
+                zip(batch["labels"].to("cuda"), batch_pred_ids)
+            ):
                 label_idx = label != -100
                 output_idx = torch.zeros_like(label_idx)
                 output_idx[:-1] = label_idx[1:]
-                
+
                 label = label[label_idx]
                 pred_ids = pred_ids[output_idx]
-                
+
                 if eval_n_label_tokens is not None and len(label) > eval_n_label_tokens:
                     label = label[:eval_n_label_tokens]
                     pred_ids = pred_ids[:eval_n_label_tokens]
-                
+
                 batch_output.append(
                     self.tokenizer.decode(pred_ids, skip_special_tokens=True)
                 )
-                
+
                 is_correct = torch.sum(label == pred_ids) == torch.numel(label)
-                
+
                 if is_correct:
                     correct_idxs.append(i)
                 correct += is_correct
-                
+
+        source_intervention_weight = predictions.source_intervention_weight
         base_intervention_weight = predictions.base_intervention_weight
-                
+
         return_dict = {
             "batch_output": batch_output,
             "batch_full_output": batch_full_output,
+            "batch_source_intervention_weight": source_intervention_weight,
             "batch_base_intervention_weight": base_intervention_weight,
             "n_correct": correct,
-            "correct_idxs": correct_idxs
-        }   
+            "correct_idxs": correct_idxs,
+        }
         return return_dict
-        
-    
+
     def plot_heatmap(
-        self, 
-        data_loader, 
-        idxs, 
-        batch_size=4, 
+        self,
+        data_loader,
+        idxs,
+        batch_size=4,
         annot=True,
         indicate_masked_tokens=False,
         digits=2,
         font_scale=1.0,
         contain_title=True,
         simplified_annot=True,
-        axes=None
+        axes=None,
     ):
-        
         fig = None
         batch_id = idxs // batch_size
-        example_id = idxs % batch_size            
-        
+        example_id = idxs % batch_size
+
         for i, batch in enumerate(data_loader):
             if i == batch_id:
                 break
-            
+
         editor_input_ids = batch["editor_input_ids"][example_id]
         base_input_ids = batch["base_input_ids"][example_id]
+        source_input_ids = batch["source_input_ids"][example_id]
         label = batch["labels"][example_id]
-        
+
+        source_padding_idx = source_input_ids == self.tokenizer.pad_token_id
         base_padding_idx = base_input_ids == self.tokenizer.pad_token_id
-        
+
+        source_input_ids = source_input_ids[~source_padding_idx]
         base_input_ids = base_input_ids[~base_padding_idx]
-        
+
         if indicate_masked_tokens:
             base_intervention_mask = batch["base_intervention_mask"][example_id]
+            source_intervention_mask = batch["source_intervention_mask"][example_id]
             base_intervention_mask = base_intervention_mask[~base_padding_idx]
-                    
+            source_intervention_mask = source_intervention_mask[~source_padding_idx]
+
         # Add a False value to the end of the source_padding_idx to account for the [SELF] token
-        
+
+        source_axis = [self.tokenizer.decode([i]) for i in source_input_ids]
         base_axis = [self.tokenizer.decode([i]) for i in base_input_ids]
-        
-        for axis in [base_axis]:
+
+        for axis in [source_axis, base_axis]:
             for i, token in enumerate(axis):
                 if token == self.tokenizer.bos_token:
                     axis[i] = "[BOS]"
-        
+
         editor_text = self.tokenizer.decode(editor_input_ids, skip_special_tokens=True)
         label = label[label != -100]
         label = self.tokenizer.decode(label)
-    
+
+        def plot_inference_model(ax, intervention_weight, prediction):
+            if indicate_masked_tokens:
+                masks = torch.ones_like(intervention_weight)
+
+                for i, source_mask in enumerate(source_intervention_mask):
+                    for j, base_mask in enumerate(base_intervention_mask):
+                        if source_mask and base_mask:
+                            masks[i, j] = False
+                # masks[:, base_intervention_mask] = 0.0
+                masks = masks.float().cpu().numpy()
+            else:
+                masks = None
+            sns.heatmap(
+                intervention_weight.float().cpu().numpy(),
+                xticklabels=base_axis,
+                yticklabels=source_axis,
+                ax=ax,
+                annot=annot,
+                fmt=f".{digits}f",
+                mask=masks,
+            )
+
+            if simplified_annot:
+                for child in ax.get_children():
+                    if isinstance(child, plt.Text):
+                        # If child
+                        if child.get_text().startswith("0."):
+                            if (
+                                child.get_text()
+                                .replace("0.", "")
+                                .replace("0", "")
+                                .strip()
+                                == ""
+                            ):
+                                child.set_text("0")
+                            else:
+                                child.set_text(child.get_text().replace("0.", "."))
+                        elif child.get_text().startswith("1"):
+                            child.set_text("1")
+
+            # Render the cell at (0, 0) with black background
+            if contain_title:
+                ax.set_title(
+                    f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}"
+                )
+            else:
+                print(
+                    f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}"
+                )
+
+            ax.set_xlabel("Base Sentence Tokens")
+            ax.set_ylabel("Counterfactual Sentence Tokens")
+
         results = self.inspect_batch_prediction_ouptuts(batch, eval_n_label_tokens=3)
-        predictions = results['batch_output'][example_id]
+        predictions = results["batch_output"][example_id]
+        source_intervention_weight = results["batch_source_intervention_weight"][
+            example_id
+        ]
         base_intervention_weight = results["batch_base_intervention_weight"][example_id]
-        
+
         # set background color to be grey
-    
+
         style = sns.axes_style("dark")
         style["axes.facecolor"] = "#100a17"
-            
+
         sns.set(style=style, font_scale=font_scale)
         if axes is None:
-            fig, ax = plt.subplots(1, 1, figsize=(15, 4))
-            
-        base_intervention_weight = base_intervention_weight[~base_padding_idx].unsqueeze(0)
+            fig, axes = plt.subplots(2, 1, figsize=(15, 4))
+
+        source_intervention_weight = source_intervention_weight[
+            ~source_padding_idx
+        ].unsqueeze(0)
+
+        base_intervention_weight = base_intervention_weight[
+            ~base_padding_idx
+        ].unsqueeze(0)
+        source_intervention_mask = (source_intervention_mask == 0).unsqueeze(0)
         base_intervention_mask = (base_intervention_mask == 0).unsqueeze(0)
-        
-        sns.heatmap(base_intervention_weight.float().cpu().numpy(), xticklabels=base_axis, ax=ax, annot=annot, fmt=f".{digits}f", mask=base_intervention_mask.float().cpu().numpy())
-        
+
+        sns.heatmap(
+            source_intervention_weight.float().cpu().numpy(),
+            xticklabels=source_axis,
+            ax=axes[0],
+            annot=annot,
+            fmt=f".{digits}f",
+            mask=source_intervention_mask.float().cpu().numpy(),
+        )
+        sns.heatmap(
+            base_intervention_weight.float().cpu().numpy(),
+            xticklabels=base_axis,
+            ax=axes[1],
+            annot=annot,
+            fmt=f".{digits}f",
+            mask=base_intervention_mask.float().cpu().numpy(),
+        )
+
         axes[0].set_yticklabels([""])
         axes[1].set_yticklabels([""])
-        
+
         axes[0].set_ylabel("Source Sentence")
         axes[1].set_ylabel("Base Sentence")
-        
-        axes[0].set_title(f"Instruction: {editor_text}     Label: {label}    Pred: {predictions}")
-        
-        plt.subplots_adjust(hspace=1) 
-        
-        return fig, axes
-        
-        
-    def eval_accuracy(self, test_loader, eval_n_label_tokens=None, debug_mode=None):
-        
-        self.interpretor.eval()
-        test_loss = []
-        correct_idxs = []
-        is_causal = []
-        
-        with torch.no_grad():
-            for batch_id, batch in tqdm(
-                enumerate(test_loader), desc="Evaluating", total=len(test_loader)
-            ):         
-                
-                base_intervention_weight = None
-                
-                if debug_mode is not None:
-                    if debug_mode == "last_token":                    
-                        base_last_token_idxs = torch.sum(batch["labels"] == -100, dim=-1) - 1
-                        base_intervention_weight = torch.functional.F.one_hot(base_last_token_idxs, num_classes=batch["base_intervention_mask"].shape[-1])
 
-                    elif debug_mode == "last_entity_token":
-                        base_intervention_weight = torch.functional.F.one_hot(batch["base_entity_position_ids"], num_classes=batch["base_intervention_mask"].shape[-1])
-                    
-                    base_intervention_weight = base_intervention_weight.float().to("cuda")
-                
+        axes[0].set_title(
+            f"Instruction: {editor_text}     Label: {label}    Pred: {predictions}"
+        )
+
+        plt.subplots_adjust(hspace=1)
+
+        return fig, axes
+
+    @torch.no_grad()
+    def eval_accuracy(
+        self,
+        test_loaders: List[NamedDataLoader],
+        inference_mode=None,
+        eval_n_label_tokens=None,
+    ):
+        assert inference_mode in [
+            None,
+            "column_argmax",
+            "global_argmax",
+            "groundtruth",
+            "bidding_argmax",
+        ]
+
+        per_dataset_accuracies = {}
+        per_dataset_test_loss = {}
+        per_dataset_correct_idxs = {}
+
+        self.interpretor.eval()
+
+        for test_loader in test_loaders:
+            test_loss = []
+            correct_idxs = []
+            is_causal = []
+
+            for batch_id, batch in tqdm(
+                enumerate(test_loader.data_loader),
+                desc="Evaluating accuracy",
+                total=self.max_eval_steps
+                if self.max_eval_steps > 0
+                else len(test_loader.data_loader),
+            ):
+                # Move entire batch to GPU once
+                batch = {k: v.to(self.device) for k, v in batch.items()}
+
                 predictions = self.forward(
-                    editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                    base_input_ids=batch["base_input_ids"].to("cuda"),
-                    base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                    base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                    labels=batch["labels"].to("cuda"),
-                    base_intervention_weight=base_intervention_weight,
+                    editor_input_ids=batch["editor_input_ids"],
+                    base_input_ids=batch["base_input_ids"],
+                    base_attention_mask=batch["base_attention_mask"],
+                    base_intervention_mask=batch["base_intervention_mask"],
+                    source_input_ids=batch["source_input_ids"],
+                    source_attention_mask=batch["source_attention_mask"],
+                    source_intervention_mask=batch["source_intervention_mask"],
+                    labels=batch["labels"],
                 )
-                
                 test_loss.append(predictions["loss"].item())
-                """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                    self.interpretor.zero_penalty()"""
-                
+                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                    self.interpretor.zero_penalty()
+
                 batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
-                
-                for i, (label, pred_ids) in enumerate(zip(batch["labels"].to("cuda"), batch_pred_ids)):
+
+                for i, (label, pred_ids) in enumerate(
+                    zip(batch["labels"].to(self.device), batch_pred_ids)
+                ):
                     label_idx = label != -100
                     output_idx = torch.zeros_like(label_idx)
                     output_idx[:-1] = label_idx[1:]
-                    
+
                     label = label[label_idx]
                     pred_ids = pred_ids[output_idx]
-                    
-                    if eval_n_label_tokens is not None and len(label) > eval_n_label_tokens:
+
+                    if (
+                        eval_n_label_tokens is not None
+                        and len(label) > eval_n_label_tokens
+                    ):
                         label = label[:eval_n_label_tokens]
                         pred_ids = pred_ids[:eval_n_label_tokens]
-                    
-                    is_correct = (torch.sum (label == pred_ids) == torch.numel(label)).item()    
+
+                    is_correct = (
+                        torch.sum(label == pred_ids) == torch.numel(label)
+                    ).item()
                     if is_correct:
                         correct_idxs.append(batch_id * len(batch["labels"]) + i)
-        
-        total_causal = sum(is_causal)
-        total_isolate = len(is_causal) - total_causal
-        
-        correct_causal = sum([is_causal[i] for i in correct_idxs])
-        correct_isolate = len(correct_idxs) - correct_causal
-        
-        causal_acc = correct_causal / total_causal if total_causal > 0 else 0.0
-        isolate_acc = correct_isolate / total_isolate if total_isolate > 0 else 0.0
-        
-        disentangle_acc = 0.5 * (causal_acc + isolate_acc) if total_isolate > 0 else causal_acc
-        
-        accuracies = {
-            "causal": causal_acc,
-            "isolate": isolate_acc,
-            "disentangle": disentangle_acc
-        }
-                    
-        return accuracies, sum(test_loss) / len(test_loss), correct_idxs
-    
-    
+
+                if self.max_eval_steps > 0 and batch_id + 1 > self.max_eval_steps:
+                    break
+
+            total_causal = sum(is_causal)
+            total_isolate = len(is_causal) - total_causal
+
+            correct_causal = sum([is_causal[i] for i in correct_idxs])
+            correct_isolate = len(correct_idxs) - correct_causal
+
+            causal_acc = correct_causal / total_causal if total_causal > 0 else 0.0
+            isolate_acc = correct_isolate / total_isolate if total_isolate > 0 else 0.0
+
+            disentangle_acc = (
+                0.5 * (causal_acc + isolate_acc) if total_isolate > 0 else causal_acc
+            )
+
+            accuracies = {
+                "causal": causal_acc,
+                "isolate": isolate_acc,
+                "disentangle": disentangle_acc,
+            }
+
+            per_dataset_accuracies[test_loader.name] = accuracies
+            per_dataset_test_loss[test_loader.name] = sum(test_loss) / len(test_loss)
+            per_dataset_correct_idxs[test_loader.name] = correct_idxs
+
+        return per_dataset_accuracies, per_dataset_test_loss, per_dataset_correct_idxs
+
     def _entropy(self, x, mean=True):
-                
         if mean:
             return -torch.sum(x * torch.log(x + 1e-12), dim=-1).mean()
-        
+
         return -torch.sum(x * torch.log(x + 1e-12), dim=-1)
-    
 
     def run_train(
         self,
         train_loader,
-        test_loader=None,
-        epochs=1,
-        n_steps=1000,
-        eval_per_steps: int = None,
-        checkpoint_per_steps: int = None,
-        causal_loss_weight=1.0,
-        iso_loss_weight=1.0,
-        lr=3e-4,
-        weight_decay=0.01,
-        save_dir=None,
-        save_model=False,
-        sparsity_loss=True,
-        sparsity_loss_weight=1.0,
-        debug_mode=None,
+        test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
     ):
-        
-        if save_dir is not None and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            
-        if debug_mode is not None:
-            assert debug_mode in ["last_token", "last_entity_token"]
-            
+        inference_modes = self.config.model.inference_modes
+        epochs = self.config.training.n_epochs
+        steps = self.config.training.n_steps
+        eval_per_steps = self.config.training.eval_per_steps
+        checkpoint_per_steps = self.config.training.checkpoint_per_steps
+        save_dir = self.config.training.save_dir
+        save_model = self.config.training.save_model
+        run_name = self.config.wandb_config.run_name
+        causal_loss_weight = self.config.loss.causal_loss_weight
+        iso_loss_weight = self.config.loss.iso_loss_weight
+        target_intervention_num = self.config.loss.get("target_intervention_num", None)
+        lr = self.config.training.lr
+        weight_decay = self.config.training.weight_decay
+        max_grad_norm = self.config.training.max_grad_norm
+        sparsity_loss = self.config.loss.sparsity.apply
+        sparsity_loss_weight = self.config.loss.sparsity.weight
+
+        os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
+        OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
+
         trainable_parameters = []
         for name, param in self.named_parameters():
-            
             if "target_model" not in name:
                 if "das_module" in name:
                     if "rotate_layer" in name:
-                        trainable_parameters += [{"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}]
+                        trainable_parameters += [
+                            {"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}
+                        ]
                     elif "mask_projection" in name:
-                        trainable_parameters += [{"params": param, "lr": self.boundary_lr}]
+                        trainable_parameters += [
+                            {"params": param, "lr": self.boundary_lr}
+                        ]
                     else:
                         trainable_parameters += [{"params": param}]
                 else:
                     trainable_parameters += [{"params": param}]
-        
-        self.opt = optim.AdamW(trainable_parameters, lr=lr, weight_decay=weight_decay)  # usually: lr = 5e-5. 1e-3 worked well!
-        
-        total_steps = len(train_loader) * epochs if n_steps is None else n_steps
+
+        self.opt = optim.AdamW(
+            trainable_parameters, lr=lr, weight_decay=weight_decay
+        )  # usually: lr = 5e-5. 1e-3 worked well!
+
+        # We can either specify total steps or epochs
+        total_steps = len(train_loader) * epochs if steps <= 0 else steps
+        if steps > 0:
+            epochs = ceil(total_steps / len(train_loader))
         cur_steps = 0
-            
+
+        if self.use_das_intervention and hasattr(
+            self.interpretor.das_module, "set_temperature"
+        ):
+            das_temperature_schedule = (
+                torch.linspace(
+                    self.das_temperature_start,
+                    self.das_temperature_end,
+                    total_steps + 1,
+                )
+                .to(self.interpretor_config.torch_dtype)
+                .to(self.device)
+            )
+            self.interpretor.das_module.set_temperature(
+                das_temperature_schedule[cur_steps]
+            )
+
         for epoch in range(epochs):
             # Create a tqdm progress bar
             with tqdm(
@@ -441,127 +640,184 @@ class RavelInterpretorHypernetwork(nn.Module):
                 num_datapoints_in_epoch = 0
                 epoch_train_loss = 0
                 # Train loop
-                for step, batch in enumerate(
-                    train_loader
-                ):  
-                    
+                for batch in train_loader:
                     if cur_steps >= total_steps:
+                        logger.info("Training stopped. Reached max steps.")
                         break
-                    
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
                             # Evaluate the model
-                            
-                            accuracies, test_loss, _ = self.eval_accuracy(
-                                test_loader, eval_n_label_tokens=3, debug_mode=debug_mode
-                            )
-                                
-                            causal_acc = accuracies["causal"]
-                            isolate_acc = accuracies["isolate"]
-                            disentangle_acc = accuracies["disentangle"]
-                                                        
-                            if wandb.run:
-                                wandb.log(
-                                    {
-                                        f"test_average_loss": test_loss,
-                                        f"causal_accuracy": causal_acc,
-                                        f"isolate_accuracy": isolate_acc,
-                                        f"disentangle_accuracy": disentangle_acc,
-                                    }
+                            for mode in inference_modes:
+                                accuracies, test_loss, _ = self.eval_accuracy(
+                                    test_loader,
+                                    inference_mode=mode,
+                                    eval_n_label_tokens=3,
                                 )
-                                
-                            print(f"Disentangle Acc: {disentangle_acc}, Causal Acc: {causal_acc}, Isolate Acc: {isolate_acc}, Test Loss: {test_loss}")
-                        
+
+                                text_mode = "default" if mode is None else mode
+
+                                for loader in test_loader:
+                                    causal_acc = accuracies[loader.name]["causal"]
+                                    isolate_acc = accuracies[loader.name]["isolate"]
+                                    disentangle_acc = accuracies[loader.name][
+                                        "disentangle"
+                                    ]
+
+                                    if wandb.run:
+                                        wandb.log(
+                                            {
+                                                f"{loader.name}/{text_mode}_test_average_loss": test_loss,
+                                                f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
+                                                f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
+                                                f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
+                                            }
+                                        )
+
+                                    logger.info(
+                                        "[%s] Under Inference Mode: %s",
+                                        loader.name,
+                                        text_mode,
+                                    )
+                                    logger.info(
+                                        "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
+                                        loader.name,
+                                        disentangle_acc,
+                                        causal_acc,
+                                        isolate_acc,
+                                        test_loss[loader.name],
+                                    )
+
                     if checkpoint_per_steps is not None:
-                        if cur_steps % checkpoint_per_steps == 0 and save_dir is not None and save_model:
-                            print("Saving model to {}".format(os.path.join(save_dir, f"model_epoch_{epoch}_step_{step}")))
-                            self.save_model(os.path.join(save_dir, f"model_epoch_{epoch}_step_{step}"))
-                            
+                        if (
+                            cur_steps % checkpoint_per_steps == 0
+                            and save_dir is not None
+                            and save_model
+                        ):
+                            logger.info(
+                                "Saving model to {}".format(
+                                    os.path.join(
+                                        save_dir,
+                                        run_name,
+                                        f"model_epoch_{epoch}_step_{cur_steps}",
+                                    )
+                                )
+                            )
+                            self.save_model(
+                                os.path.join(
+                                    save_dir,
+                                    run_name,
+                                    f"model_epoch_{epoch}_step_{cur_steps}",
+                                )
+                            )
+
                     self.batch = batch
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
-                    
-                    base_intervention_weight = None
-                    
-                    if debug_mode is not None:
-                        if debug_mode == "last_token":
-                                         
-                            base_last_token_idxs = torch.sum(batch["labels"] == -100, dim=-1) - 1
-                            base_intervention_weight = torch.functional.F.one_hot(base_last_token_idxs, num_classes=batch["base_intervention_mask"].shape[-1])
-                                                
-                        base_intervention_weight = base_intervention_weight.float().to("cuda")
-                        
-                    
+
+                    # Move all batch items to device
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
+
                     prediction = self.forward(
-                        editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                        base_input_ids=batch["base_input_ids"].to("cuda"),
-                        base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                        base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                        labels=batch["labels"].to("cuda"),
-                        is_causal=batch["is_causal"].to("cuda"),
+                        editor_input_ids=batch["editor_input_ids"],
+                        base_input_ids=batch["base_input_ids"],
+                        base_attention_mask=batch["base_attention_mask"],
+                        base_intervention_mask=batch["base_intervention_mask"],
+                        source_input_ids=batch["source_input_ids"],
+                        source_attention_mask=batch["source_attention_mask"],
+                        source_intervention_mask=batch["source_intervention_mask"],
+                        labels=batch["labels"],
+                        is_causal=batch["is_causal"],
                         causal_loss_weight=causal_loss_weight,
-                        base_intervention_weight=base_intervention_weight,
+                        iso_loss_weight=iso_loss_weight,
+                        output_intervention_weight=True,
                     )
-                    
+
                     training_loss = 0
-                    
-                    prediction_loss = prediction["loss"]                            
+
+                    prediction_loss = prediction["loss"]
                     training_loss += prediction_loss
-                    
+
                     if sparsity_loss:
-                        
-                        base_intervention_weight = prediction["base_intervention_weight"]
-                        
-                        base_entropy = self._entropy(base_intervention_weight, mean=True)
-                        
-                        sparsity_loss = sparsity_loss_weight * base_entropy
+                        source_intervention_weight = prediction[
+                            "source_intervention_weight"
+                        ]
+                        base_intervention_weight = prediction[
+                            "base_intervention_weight"
+                        ]
+
+                        source_entropy = self._entropy(
+                            source_intervention_weight, mean=True
+                        )
+                        base_entropy = self._entropy(
+                            base_intervention_weight, mean=True
+                        )
+
+                        sparsity_loss = sparsity_loss_weight * (
+                            source_entropy + base_entropy
+                        )
                         training_loss += sparsity_loss
-                        
-                                            
-                    """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                        penalty = self.interpretor.get_penalty()
-                        training_loss += penalty
-                        self.interpretor.zero_penalty()"""
+
+                    if target_intervention_num is not None:
+                        assert isinstance(target_intervention_num, int)
+
+                        source_target_intervention_num = self._intervention_number(
+                            prediction.intervention_weight, mean=True
+                        )
+                        intervention_number_loss = (
+                            source_target_intervention_num - target_intervention_num
+                        ) ** 2
+                        training_loss += intervention_number_loss
 
                     training_loss.backward()
-                    nn.utils.clip_grad_norm_(
-                        self.parameters(), 4.0
+                    grad_norm = nn.utils.clip_grad_norm_(
+                        self.parameters(), max_grad_norm
                     )
-                    # print(prediction.logits)
-                    # print(self.interpretor.hypernetwork.model.layers[1].self_attn.q_proj.weight.grad)
+
+                    # Log more gradient norms
+                    if hasattr(self.interpretor.das_module, "gradient_norms"):
+                        grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+                    else:
+                        grad_norm_metrics = {}
+
                     self.opt.step()
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
                     self.opt.zero_grad()
-                    
+
                     # TEST: orthogonalize the rotation matrix every step
                     """if self.use_das_intervention:
                         self.interpretor.das_module.orthogonalize_rotation_matrix()"""
 
                     metrics = {
-                        "step": cur_steps,
+                        "counters/step": cur_steps,
+                        "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
+                        "grad_norm": grad_norm.item(),
+                        **prediction.metrics,
+                        **grad_norm_metrics,
                     }
-                    
-                    if sparsity_loss:
-                        metrics["train_batch_base_sparsity_loss"] = base_entropy.item()
-                        
-                    """if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                        metrics["train_batch_penalty"] = penalty.item()"""
+                    if target_intervention_num is not None:
+                        metrics["train_batch_#intervention_loss"] = (
+                            intervention_number_loss.item()
+                        )
 
                     if wandb.run:
                         wandb.log(metrics)
-                        
-                    if torch.isnan(prediction_loss):
-                        raise
-                        
                     if cur_steps % 5 == 0:
-                        print(metrics)
+                        output_metrics = {**metrics}
+
+                        logger.info(output_metrics)
 
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
-                    
+                    if self.use_das_intervention and hasattr(
+                        self.interpretor.das_module, "set_temperature"
+                    ):
+                        self.interpretor.das_module.set_temperature(
+                            das_temperature_schedule[cur_steps]
+                        )
+
                 if wandb.run:
                     wandb.log(
                         {
@@ -569,24 +825,28 @@ class RavelInterpretorHypernetwork(nn.Module):
                             / num_datapoints_in_epoch,
                         }
                     )
-                
-                if cur_steps >= total_steps:
-                    break
-                    
+
         result_dict = {}
-        accs, test_loss, correct_indices = self.eval_accuracy(test_loader, eval_n_label_tokens=3, debug_mode=debug_mode)
-        result_dict = {
-            "accs": accs,
-            "test_loss": test_loss,
-            "correct_indices": correct_indices,
-        }
-        
-        for k, v in accs.items():
-            print(f"{k}: {v}")
-                    
+        for inference_mode in inference_modes:
+            accs, test_loss, correct_indices = self.eval_accuracy(
+                test_loader, inference_mode=inference_mode, eval_n_label_tokens=3
+            )
+            if inference_mode is None:
+                inference_mode = "default"
+            result_dict[inference_mode] = {
+                "accs": accs,
+                "test_loss": test_loss,
+                "correct_indices": correct_indices,
+            }
+
+            for k, v in accs.items():
+                logger.info(f"{inference_mode} {k}: {v}")
+
         # Save the final model
-        if save_dir is not None:
-            if save_model:
-                self.save_model(os.path.join(save_dir, "final_model"))
-            json.dump(result_dict, open(os.path.join(save_dir, "final_result.json"), "w"))
-                    
+        if save_model and save_dir:
+            self.save_model(os.path.join(save_dir, run_name, "final_model"))
+        if save_dir:
+            json.dump(
+                result_dict,
+                open(os.path.join(save_dir, run_name, "final_result.json"), "w"),
+            )

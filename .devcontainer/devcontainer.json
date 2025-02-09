@@ -1,0 +1,9 @@
+{
+    "name": "HyperDAS",
+    "build": {
+        "context": "..",
+        "dockerfile": "../Dockerfile"
+    },
+    "workspaceFolder": "/workspace/HyperDAS",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/HyperDAS,type=bind",
+}

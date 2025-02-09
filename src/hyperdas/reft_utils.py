@@ -1,6 +1,4 @@
-
 from pyvene import (
-    ConstantSourceIntervention,
     SourcelessIntervention,
     TrainableIntervention,
     DistributedRepresentationIntervention,
@@ -13,22 +11,32 @@ import torch.nn as nn
 from transformers.activations import ACT2FN
 from collections import OrderedDict
 
+from .utils import InterventionModuleOutput
+
 
 class HiddenStatesProjectionMLP(nn.Module):
-    def __init__(self, in_size, out_size, intermediate_size=14336, torch_dtype=torch.float32):
+    def __init__(
+        self, in_size, out_size, intermediate_size=14336, torch_dtype=torch.float32
+    ):
         super().__init__()
         self.in_size = in_size
         self.out_size = out_size
         self.intermediate_size = intermediate_size
-        
-        self.gate_proj = nn.Linear(self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype)
-        self.up_proj = nn.Linear(self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype)
-        self.down_proj = nn.Linear(self.intermediate_size, self.out_size, bias=False, dtype=torch_dtype)
+
+        self.gate_proj = nn.Linear(
+            self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype
+        )
+        self.up_proj = nn.Linear(
+            self.in_size, self.intermediate_size, bias=False, dtype=torch_dtype
+        )
+        self.down_proj = nn.Linear(
+            self.intermediate_size, self.out_size, bias=False, dtype=torch_dtype
+        )
         self.act_fn = nn.SiLU()
-        
+
     def forward(self, x):
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-    
+
 
 class LowRankRotateLayer(torch.nn.Module):
     """A linear transformation with orthogonal initialization."""
@@ -42,36 +50,42 @@ class LowRankRotateLayer(torch.nn.Module):
 
     def forward(self, x):
         return torch.matmul(x.to(self.weight.dtype), self.weight)
-    
 
 
 class LoreftIntervention(
-    SourcelessIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
+    SourcelessIntervention, TrainableIntervention, DistributedRepresentationIntervention
 ):
     """
     LoReFT(h) = h + R^T(Wh + b − Rh)
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
+            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True
+        )
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(
-            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
-        self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        
-    def forward(
-        self, base, source=None, subspaces=None
-    ):
-        rotated_base = self.rotate_layer(base)
-        output = torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), self.rotate_layer.weight.T
+            self.embed_dim, kwargs["low_rank_dimension"]
+        ).to(kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+        self.dropout = torch.nn.Dropout(
+            kwargs["dropout"] if "dropout" in kwargs else 0.0
         )
-        return self.dropout(output.to(base.dtype))
+        self.act_fn = (
+            ACT2FN["linear"]
+            if "act_fn" not in kwargs or kwargs["act_fn"] is None
+            else ACT2FN[kwargs["act_fn"]]
+        )
+
+    def forward(self, base, source=None, subspaces=None) -> InterventionModuleOutput:
+        metrics = {}
+        rotated_base = self.rotate_layer(base)
+        mixed_output = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base),
+            self.rotate_layer.weight.T,
+        )
+        mixed_output = self.dropout(mixed_output.to(base.dtype))
+        return InterventionModuleOutput(mixed_output=mixed_output, metrics=metrics)
 
     def state_dict(self, *args, **kwargs):
         """
@@ -91,67 +105,81 @@ class LoreftIntervention(
 
         # Caveat: without creating a new layer, it might not work (still not sure why)
         # We have to recreate a layer, and load back the columns.
-        overload_w = state_dict["rotate_layer"].to(
-            self.learned_source.weight.device)
+        overload_w = state_dict["rotate_layer"].to(self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, overload_w_width, init_orth=True).to(
-            self.learned_source.weight.device)
+            self.embed_dim, overload_w_width, init_orth=True
+        ).to(self.learned_source.weight.device)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
-        self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
-        assert torch.allclose(self.rotate_layer.weight.data, overload_w.data) == True # we must match!
-        
+        self.rotate_layer.parametrizations.weight[0].base[:, :overload_w_width] = (
+            overload_w
+        )
+        assert (
+            torch.allclose(self.rotate_layer.weight.data, overload_w.data) is True
+        )  # we must match!
+
         return
-    
-    
+
 
 class SelectiveLoreftIntervention(
-    SourcelessIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
+    SourcelessIntervention, TrainableIntervention, DistributedRepresentationIntervention
 ):
     """
     LoReFT(h) = h + R^T(Wh + b − Rh)
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True)
+            self.embed_dim, kwargs["low_rank_dimension"], init_orth=True
+        )
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, kwargs["low_rank_dimension"]).to(
-            kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
-        self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        
-        
-        self.rv_proj = HiddenStatesProjectionMLP(
-            in_size=self.embed_dim, 
-            out_size=self.embed_dim, 
-            torch_dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+            self.embed_dim, kwargs["low_rank_dimension"]
+        ).to(kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
+        self.dropout = torch.nn.Dropout(
+            kwargs["dropout"] if "dropout" in kwargs else 0.0
         )
-        
-        self.input_layernorm = LlamaRMSNorm(
-            hidden_size=self.embed_dim, eps=1e-5
-        ).to(dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
-        
+        self.act_fn = (
+            ACT2FN["linear"]
+            if "act_fn" not in kwargs or kwargs["act_fn"] is None
+            else ACT2FN[kwargs["act_fn"]]
+        )
+
+        self.rv_proj = HiddenStatesProjectionMLP(
+            in_size=self.embed_dim,
+            out_size=self.embed_dim,
+            torch_dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16,
+        )
+
+        self.input_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
+            dtype=kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16
+        )
+
     def forward(
         self, base, hidden_states, source=None, subspaces=None
-    ):
-        
+    ) -> InterventionModuleOutput:
+        metrics = {}
         normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
         rv = self.rv_proj(normalized_hidden_state)
         rv = rv / torch.norm(rv, dim=-1, keepdim=True)
-        
-        householder = torch.eye(self.embed_dim, device=rv.device, dtype=rv.dtype).unsqueeze(0) - 2 * torch.bmm(rv.unsqueeze(2), rv.unsqueeze(1))
-        reflected_weight = torch.matmul(householder, self.rotate_layer.weight.to(rv.dtype))
-        
-        rotated_base = torch.bmm(base, reflected_weight)
-    
-        output = torch.matmul(
-            (self.act_fn(self.learned_source(base)) - rotated_base), torch.transpose(reflected_weight, 1, 2)
+
+        householder = torch.eye(
+            self.embed_dim, device=rv.device, dtype=rv.dtype
+        ).unsqueeze(0) - 2 * torch.bmm(rv.unsqueeze(2), rv.unsqueeze(1))
+        reflected_weight = torch.matmul(
+            householder, self.rotate_layer.weight.to(rv.dtype)
         )
-        return self.dropout(output.to(base.dtype))
+
+        rotated_base = torch.bmm(base, reflected_weight)
+
+        output = torch.matmul(
+            (self.act_fn(self.learned_source(base)) - rotated_base),
+            torch.transpose(reflected_weight, 1, 2),
+        )
+        return InterventionModuleOutput(
+            mixed_output=self.dropout(output.to(base.dtype)), metrics=metrics
+        )
 
     def state_dict(self, *args, **kwargs):
         """
@@ -171,37 +199,48 @@ class SelectiveLoreftIntervention(
 
         # Caveat: without creating a new layer, it might not work (still not sure why)
         # We have to recreate a layer, and load back the columns.
-        overload_w = state_dict["rotate_layer"].to(
-            self.learned_source.weight.device)
+        overload_w = state_dict["rotate_layer"].to(self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, overload_w_width, init_orth=True).to(
-            self.learned_source.weight.device)
+            self.embed_dim, overload_w_width, init_orth=True
+        ).to(self.learned_source.weight.device)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
-        self.rotate_layer.parametrizations.weight[0].base[:,:overload_w_width] = overload_w
-        assert torch.allclose(self.rotate_layer.weight.data, overload_w.data) == True # we must match!
-        
+        self.rotate_layer.parametrizations.weight[0].base[:, :overload_w_width] = (
+            overload_w
+        )
+        assert (
+            torch.allclose(self.rotate_layer.weight.data, overload_w.data) is True
+        )  # we must match!
+
         return
-    
-    
+
+
 class SteeringVecLoreftIntervention(
-    SourcelessIntervention,
-    TrainableIntervention, 
-    DistributedRepresentationIntervention
+    SourcelessIntervention, TrainableIntervention, DistributedRepresentationIntervention
 ):
     """
     LoReFT(h) = h + R^T(Wh + b − Rh)
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
-        self.dropout = torch.nn.Dropout(kwargs["dropout"] if "dropout" in kwargs else 0.0)
-        self.act_fn = ACT2FN["linear"] if "act_fn" not in kwargs or kwargs["act_fn"] is None else ACT2FN[kwargs["act_fn"]]
-        
+        self.dropout = torch.nn.Dropout(
+            kwargs["dropout"] if "dropout" in kwargs else 0.0
+        )
+        self.act_fn = (
+            ACT2FN["linear"]
+            if "act_fn" not in kwargs or kwargs["act_fn"] is None
+            else ACT2FN[kwargs["act_fn"]]
+        )
+
     def forward(
         self, base, hidden_states, source=None, subspaces=None
-    ):
+    ) -> InterventionModuleOutput:
+        metrics = {}
         output = hidden_states[:, -1, :].unsqueeze(1).repeat(1, base.shape[1], 1)
-        return self.dropout(output.to(base.dtype))
+        return InterventionModuleOutput(
+            mixed_output=self.dropout(output.to(base.dtype)), metrics=metrics
+        )
 
     def state_dict(self, *args, **kwargs):
         """
@@ -211,5 +250,4 @@ class SteeringVecLoreftIntervention(
         return state_dict
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        
         return

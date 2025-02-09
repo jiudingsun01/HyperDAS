@@ -1,189 +1,204 @@
-import torch
-from torch import compile
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
-import pandas as pd
+import gc
 import os
-import time
-import sys
-import wandb
 import random
-import numpy as np
-import json
-from tqdm import tqdm
-from datasets import Dataset, load_from_disk
-from src.hyperdas.data_utils import get_collate_fn
-import argparse
+from datetime import datetime
 
-
+import hydra
+import omegaconf
+import torch
+import wandb
+from datasets import load_from_disk
+from dotenv import load_dotenv
+from hydra.core.hydra_config import HydraConfig
+from hydra.utils import get_original_cwd, to_absolute_path
+from omegaconf import DictConfig, OmegaConf
+from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
+
+from logger import get_logger
+from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
+from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+from src.hyperdas.utils import NamedDataLoader
+
+logger = get_logger(__name__)
 
 
 def run_experiment(
-    log_wandb=True,
-    wandb_project="hypernetworks-interpretor",
-    wandb_run_name=None,
-    debug_model=False,
-    intervention_layer=15,
-    subspace_module="ReflectSelect",
-    model_name_or_path="./models/llama3-8b",
-    load_trained_from=None,
-    batch_size=8,
-    save_dir=None,
-    n_epochs=1,
-    n_steps=1000,
-    das_dimension=None,
-    lr=3e-5,
-    weight_decay=0.01,
-    eval_per_steps=100,
-    checkpoint_per_steps=500,
-    test_path=None,
-    train_path=None,
-    causal_loss_weight=1,
-    num_decoders=8,
-    initialize_from_scratch=False,
-    save_model=False,
-    seed=None,
-    sparsity_loss=True,
-    sparsity_loss_weight=1.0,
-    debug_mode=None,
+    config: DictConfig,
+    device: str | torch.DeviceObjType = "cuda",
 ):
-    
-    """if save_dir is not None:
-        save_dir = os.path.join("./models", save_dir)"""
-    
-    if seed is not None:
-        random.seed(args["seed"])
-        np.random.seed(args["seed"])
-        torch.manual_seed(args["seed"])
-        torch.cuda.manual_seed(args["seed"])
-        torch.cuda.manual_seed_all(args["seed"])
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        
-    if log_wandb:
+    # If experiment config exists, use it instead of root config
+    config = config.experiment if hasattr(config, "experiment") else config
+    logger.info(f"Config: {OmegaConf.to_yaml(config)}")
+
+    if config.training.debug_model:
+        config.model.inference_modes = ["groundtruth"]
+
+    if "default" in config.model.inference_modes:
+        config.model.inference_modes.remove("default")
+        config.model.inference_modes.append(None)
+
+    config.wandb_config.run_name = (
+        config.wandb_config.run_name
+        or f"{config.model.subspace_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
+    if config.wandb_config.log:
         wandb.init(
-            project=wandb_project,
-            name=wandb_run_name,
-            config={
-                "targetmodel": model_name_or_path, 
-                "editormodel": model_name_or_path, 
-                "dataset": "ravel",
-                "intervention_layer": intervention_layer,
-                "subspace_module": subspace_module,
-                "das_dimension": das_dimension,
-            },
+            project=config.wandb_config.project,
+            entity=config.wandb_config.entity,
+            name=config.wandb_config.run_name,
+            config=OmegaConf.to_container(config),
+            group=config.wandb_config.group,
+            tags=config.wandb_config.tags,
+            notes=config.wandb_config.notes,
+        )
+        wandb.run.log_code("/workspace/HyperDAS/src/hyperdas/")
+
+    tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    tokenizer.padding_side = "left"
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    train_set = load_from_disk(config.dataset.train_path)
+
+    # Load multiple test sets
+    if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
+        test_set = [load_from_disk(path) for path in config.dataset.test_path]
+    else:
+        test_set = load_from_disk(config.dataset.test_path)
+
+    if config.dataset.dataset_type == "axbench":
+        collate_fn = get_axbench_collate_fn(tokenizer)
+    elif config.dataset.dataset_type == "ravel":
+        collate_fn = get_ravel_collate_fn(
+            tokenizer,
+            source_suffix_visibility=config.dataset.source_suffix_visibility,
+            base_suffix_visibility=config.dataset.base_suffix_visibility,
+            contain_entity_position=True,
+            add_space_before_target=True,
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    
-    if "llama" in model_name_or_path:
-        tokenizer.padding_side = "left"
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-    elif "gemma" in model_name_or_path:
-        tokenizer.padding_side = "right"
+    # very hacky
+    try:
+        getattr(HydraConfig.get().job, "num")
+        is_multirun = True
+    except Exception:
+        is_multirun = False
+    num_workers = 0 if is_multirun else config.training.num_workers
 
-    train_set = load_from_disk(train_path)
-    test_set = load_from_disk(test_path)
-    
-    collate_fn = get_collate_fn(tokenizer)
- 
-    data_loader = DataLoader(
-        train_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
-    )
-    
-    test_data_loader = DataLoader(
-        test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
+    train_data_loader = DataLoader(
+        train_set,
+        batch_size=config.training.train_batch_size,
+        collate_fn=collate_fn,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
     )
 
-    from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+    if isinstance(test_set, list):
+        test_data_loader = [
+            NamedDataLoader(
+                data_loader=DataLoader(
+                    test_set_,
+                    batch_size=config.training.test_batch_size,
+                    collate_fn=collate_fn,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    pin_memory=True,
+                ),
+                name=os.path.basename(config.dataset.test_path[i]),
+            )
+            for i, test_set_ in enumerate(test_set)
+        ]
+    else:
+        test_data_loader = [
+            NamedDataLoader(
+                data_loader=DataLoader(
+                    test_set,
+                    batch_size=config.training.test_batch_size,
+                    collate_fn=collate_fn,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    pin_memory=True,
+                ),
+                name=os.path.basename(config.dataset.test_path),
+            )
+        ]
 
-    hypernetwork = RavelInterpretorHypernetwork(
-        target_model_name_or_path=model_name_or_path,
-        num_editing_heads=32,
-        intervention_layer=intervention_layer,
-        subspace_module=subspace_module,
-        das_dimension=das_dimension,
-        chop_editor_at_layer=num_decoders,
-        initialize_from_scratch=initialize_from_scratch,
-    )
-    hypernetwork = hypernetwork.to("cuda")
-    
-    if load_trained_from is not None:
-        hypernetwork.load_model(load_trained_from)
+    hypernetwork = RavelInterpretorHypernetwork(config, device)
 
-    hypernetwork.run_train(
-        train_loader=data_loader,
-        test_loader=test_data_loader,
-        epochs=n_epochs,
-        n_steps=n_steps,
-        checkpoint_per_steps = checkpoint_per_steps,
-        eval_per_steps = eval_per_steps,
-        save_dir=save_dir,
-        causal_loss_weight=causal_loss_weight,
-        weight_decay=weight_decay, 
-        lr=lr,
-        save_model=save_model,
-        sparsity_loss=sparsity_loss,
-        sparsity_loss_weight=sparsity_loss_weight,
-        debug_mode=debug_mode,
-    )
+    if config.training.load_trained_from is not None:
+        logger.info(f"Loading model from {config.training.load_trained_from}")
+        hypernetwork.load_model(config.training.load_trained_from)
 
-    if log_wandb:
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+
+    if config.wandb_config.log:
         wandb.finish()
-        
-    
+
+
+@hydra.main(version_base=None, config_path="config", config_name="config")
+def main(cfg: DictConfig):
+    try:
+        logger.info(f"Working directory : {os.getcwd()}")
+        logger.info(f"Original working directory    : {get_original_cwd()}")
+        logger.info(f"to_absolute_path('foo')       : {to_absolute_path('foo')}")
+        logger.info(f"to_absolute_path('/foo')      : {to_absolute_path('/foo')}")
+
+        # Check if we're running in serial mode
+        is_serial = os.environ.get("LAUNCH_MODE", "parallel") == "serial"
+
+        if cfg.device_mode is None:
+            cfg.device_mode = (
+                "mps"
+                if torch.backends.mps.is_available()
+                else "cuda"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+
+        if cfg.device_mode == "mps":
+            device = "mps"
+        else:
+            if is_serial:
+                # Use single GPU for serial mode
+                device = "cuda:0"
+            elif cfg.device_mode == "cuda":
+                # Use distributed GPUs for parallel mode
+                num_gpus = torch.cuda.device_count()
+                try:
+                    job_num = getattr(HydraConfig.get().job, "num", 0)
+                except Exception:
+                    job_num = 0
+                gpu_id = job_num % num_gpus
+                device = f"cuda:{gpu_id}"
+            else:
+                device = "cpu"
+
+        logger.info(
+            f"Running in {'serial' if is_serial else 'parallel'} mode on device {device}"
+        )
+
+        if not is_serial and cfg.device_mode == "cuda":
+            torch.cuda.set_device(device)
+
+        # Set seed
+        torch.manual_seed(cfg.training.seed)
+        random.seed(cfg.training.seed)
+
+        run_experiment(cfg, device)
+
+        if cfg.device_mode == "cuda":
+            torch.cuda.empty_cache()
+            gc.collect()
+    except Exception as e:
+        logger.error(f"An error occurred in hydra_main: {str(e)}", exc_info=True)
+        raise
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--log_wandb", type=bool, default=False)
-    parser.add_argument("--wandb_project", type=str, default="HyperDAS-Symmetry-Real")
-    parser.add_argument("--wandb_run_name", type=str, default="City-HouseHolder")
-    parser.add_argument("--intervention_layer", type=int, default=15)
-    
-    parser.add_argument("--load_trained_from", type=str, default=None)
-    
-    parser.add_argument("--n_epochs", type=int, default=15)
-    parser.add_argument("--n_steps", type=int, default=5000)
-    
-    parser.add_argument("--model_name_or_path", type=str, default="meta-llama/Meta-Llama-3-8B")
-    parser.add_argument("--batch_size", type=int, default=16)
-    
-    parser.add_argument("--test_path", type=str, default="./experiments/Axbench/data/axbench16k_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/Axbench/data/axbench16k_train")
-     
-    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
-    
-    parser.add_argument("--save_dir", type=str, default="./test_axbench")
-    parser.add_argument("--save_model", default=False, action="store_true")
-    
-    parser.add_argument("--num_decoders", type=int, default=2)
-    parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
-    
-    # Sparsity Loss
-    parser.add_argument("--sparsity_loss", default=True)
-    parser.add_argument("--sparsity_loss_weight", type=float, default=1)
-        
-    # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="SelectiveLoReFT", choices=["LoReFT", "SelectiveLoReFT", "SteeringVec"])
-    parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=2e-4)
-    parser.add_argument("--weight_decay", type=float, default=0.01)
-    
-    parser.add_argument("--eval_per_steps", type=int, default=None)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=None)
-    
-    parser.add_argument('--debug_mode', default=None, choices=[None, "last_entity_token"])
-    
-    args = parser.parse_args()
-    args = dict(args.__dict__)
-    
-    if not os.path.exists(args["save_dir"]):
-        os.makedirs(args["save_dir"])
-    
-    if args["save_dir"] is not None:
-        json.dump(args, open(os.path.join(args["save_dir"], "args.json"), "w"))
-    
-    run_experiment(**args)
+    load_dotenv(override=True)
+    main()

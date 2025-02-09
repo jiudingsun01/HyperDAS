@@ -1,0 +1,58 @@
+services:
+  hyperdas:
+    restart: always
+    container_name: ${CONTAINER_NAME}
+    image: ${CONTAINER_NAME}:latest  # Local project image
+    env_file: .env
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        - PYTHON_VERSION=${PYTHON_VERSION}
+        - GIT_EMAIL=${GIT_EMAIL}
+        - GIT_NAME=${GIT_NAME}
+        - PROJECT_NAME=${PROJECT_NAME}
+    volumes:
+      - .:/workspace/${PROJECT_NAME}
+      - ./assets:/workspace/${PROJECT_NAME}/assets
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ./.vscode-server:/.vscode-server
+      - ${HOME}/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+    
+    network_mode: host
+    command: >
+      zsh -c "
+      ray start --head \
+      --include-dashboard=true \
+      --dashboard-host=0.0.0.0 \
+      --dashboard-port=8265 \
+      --port=6379 \
+      --ray-client-server-port=10001 \
+      --node-ip-address=0.0.0.0 \
+      --block"
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "test -s `which nvidia-smi` && nvidia-smi || exit 1"]
+      start_period: 1s
+      interval: 20s
+      timeout: 5s
+      retries: 2
+    labels:
+      - autoheal=true
+      - autoheal.stop.timeout=1
+
+  autoheal:
+    image: willfarrell/autoheal
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always

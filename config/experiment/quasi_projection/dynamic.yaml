@@ -1,0 +1,38 @@
+defaults:
+  - /model: llama3_8b
+  - /dataset: city_country
+  - /training: base
+  - /loss: base
+  - /wandb_config: base
+  - _self_
+
+model:
+  subspace_module: "QuasiProjective"
+  dict_size: 128
+  scoring_dimension: 32
+  return_penalty: false
+  orthogonal_init: true
+  selection_mechanism: dynamic
+  lambda_parameter: 1e-3
+  inference_modes: [null]
+  num_decoders: 2
+  hat_matrix: true
+
+training:
+  lr: 3e-5
+  weight_decay: 0.01
+  n_epochs: 5
+  n_steps: -1
+  eval_per_steps: 500
+  save_model: false
+  debug_model: false
+
+loss:
+  return_penalty: false
+  sparsity:
+    apply: true
+    weight: 1.0
+
+
+wandb_config:
+  group: ridge_dynamic_country_baseline

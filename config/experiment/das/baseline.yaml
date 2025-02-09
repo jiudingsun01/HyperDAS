@@ -1,0 +1,37 @@
+defaults:
+  - /model: llama3_8b
+  - /dataset: city_country
+  - /training: base
+  - /loss: base
+  - /wandb_config: base
+  - _self_
+
+# Move all configurations under their respective groups
+model:
+  subspace_module: "ReflectSelect"
+  das_dimension: 128
+  num_editing_heads: 32
+  num_decoders: 2
+  intervention_layer: 15
+  inference_modes: [null]
+
+training:
+  lr: 3e-5
+  weight_decay: 0.01
+  n_epochs: 5
+  n_steps: -1
+  eval_per_steps: 200
+  save_model: true
+  debug_model: false
+
+loss:
+  return_penalty: false
+  sparsity:
+    apply: true
+    schedule: true
+    weight_start: 0.5
+    weight_end: 1.5
+    warm_up_ratio: 0.3
+
+wandb_config:
+  group: reflectdas_country_baseline

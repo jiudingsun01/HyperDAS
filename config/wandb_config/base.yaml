@@ -1,0 +1,7 @@
+log: true
+project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+entity: ${oc.env:WANDB_ENTITY,null}
+run_name: ${oc.env:WANDB_RUN_NAME,null}
+group: ${oc.env:WANDB_GROUP,null}
+tags: ${oc.env:WANDB_TAGS,null}
+notes: ${oc.env:WANDB_NOTES,null}

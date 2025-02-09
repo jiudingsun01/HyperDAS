@@ -1,0 +1,27 @@
+defaults:
+  - /model: llama3_8b
+  - /dataset: city
+  - /training: base
+  - /loss: base
+  - /wandb_config: base
+  - _self_
+
+model:
+  subspace_module: "QuasiProjective"
+  dict_size: 4096
+  lambda_parameter: 1e-3
+  ridge_parameterization: softmax
+  return_penalty: true
+  orthogonal_init: true
+  selection_mechanism: full
+
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 32
+  eval_per_steps: 100
+  compute_metrics: true
+  debug_model: true
+
+wandb_config:
+  log: true

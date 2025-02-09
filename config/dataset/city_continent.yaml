@@ -1,0 +1,7 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
+train_path: "experiments/RAVEL/data/city_continent_train"
+test_path: "experiments/RAVEL/data/city_continent_test"
+dataset_type: ravel

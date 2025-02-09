@@ -1,32 +1,24 @@
 import sys
 
-sys.path.append('../..')
+sys.path.append("../..")
 
-from torch.utils.data import DataLoader
-from datasets import load_from_disk
-import torch
-from src.hyperdas.data_utils import generate_ravel_dataset, get_ravel_collate_fn, filter_dataset
 from train import run_experiment
 
-from transformers import AutoTokenizer, LlamaForCausalLM
 import argparse
 
 
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser()
     parser.add_argument("--start_layer", type=int)
     parser.add_argument("--end_layer", type=int)
-    
+
     args = parser.parse_args()
-    
+
     start_layer = args.start_layer
     end_layer = args.end_layer
-    
-    
-    
+
     results = {}
-    
+
     for layer in range(start_layer, end_layer, 2):
         run_experiment(
             log_wandb=True,
@@ -50,7 +42,5 @@ if __name__ == "__main__":
             checkpoint_per_steps=None,
             test_path="./experiments/RAVEL/data/city_test",
             train_path="./experiments/RAVEL/data/city_train",
-            causal_loss_weight=3.5
+            causal_loss_weight=3.5,
         )
-        
-        

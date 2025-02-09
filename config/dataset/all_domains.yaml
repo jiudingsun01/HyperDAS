@@ -1,0 +1,12 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
+train_path: "experiments/RAVEL/data/all_domains_train"
+test_path: 
+  - "experiments/RAVEL/data/city_test"
+  - "experiments/RAVEL/data/occupation_test"
+  - "experiments/RAVEL/data/nobel_prize_winner_test"
+  - "experiments/RAVEL/data/verb_test"
+  - "experiments/RAVEL/data/physical_object_test"
+dataset_type: ravel

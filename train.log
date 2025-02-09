@@ -1,0 +1,2757 @@
+[2025-02-08 13:09:11,871][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:09:11,871][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:09:11,871][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:09:11,871][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:09:11,872][__main__][ERROR] - An error occurred in hydra_main: integer division or modulo by zero
+Traceback (most recent call last):
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 167, in main
+    gpu_id = job_num % num_gpus
+ZeroDivisionError: integer division or modulo by zero
+[2025-02-08 13:11:22,056][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:11:22,056][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:11:22,057][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:11:22,057][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:11:22,100][__main__][ERROR] - An error occurred in hydra_main: integer division or modulo by zero
+Traceback (most recent call last):
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 175, in main
+    gpu_id = job_num % num_gpus
+ZeroDivisionError: integer division or modulo by zero
+[2025-02-08 13:11:43,279][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:11:43,279][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:11:43,279][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:11:43,280][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:12:13,721][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 164, in main
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 164, in main
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+bdb.BdbQuit
+[2025-02-08 13:12:17,432][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:17,433][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:17,433][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:12:17,433][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:12:31,794][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 156, in main
+    if cfg.device_mode is None:
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 156, in main
+    if cfg.device_mode is None:
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+bdb.BdbQuit
+[2025-02-08 13:12:37,982][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:37,982][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:37,983][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:12:37,983][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:12:44,878][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 156, in main
+    "mps"
+  File "/Users/sidbaskaran/Desktop/research/HyperDAS/train.py", line 156, in main
+    "mps"
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+  File "/Users/sidbaskaran/miniconda3/envs/interp/lib/python3.10/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+bdb.BdbQuit
+[2025-02-08 13:12:48,487][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:48,487][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 13:12:48,487][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 13:12:48,487][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 13:12:48,497][__main__][INFO] - Running in parallel mode on device mps
+[2025-02-08 13:12:48,500][__main__][INFO] - Config: model:
+  name_or_path: meta-llama/Meta-Llama-3-8B
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 14:49:38,629][__main__][INFO] - Working directory : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 14:49:38,630][__main__][INFO] - Original working directory    : /Users/sidbaskaran/Desktop/research/HyperDAS
+[2025-02-08 14:49:38,630][__main__][INFO] - to_absolute_path('foo')       : /Users/sidbaskaran/Desktop/research/HyperDAS/foo
+[2025-02-08 14:49:38,630][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 14:49:38,657][__main__][INFO] - Running in parallel mode on device mps
+[2025-02-08 14:49:38,660][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 22:50:31,288][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 22:50:31,288][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 22:50:31,288][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 22:50:31,289][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 22:50:31,423][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 22:50:31,431][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 22:54:35,840][__main__][ERROR] - An error occurred in hydra_main: 'LoreftIntervention' object has no attribute 'set_temperature'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 625, in run_train
+    self.interpretor.das_module.set_temperature(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1928, in __getattr__
+    raise AttributeError(
+AttributeError: 'LoreftIntervention' object has no attribute 'set_temperature'
+[2025-02-08 22:55:21,913][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 22:55:21,913][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 22:55:21,913][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 22:55:21,913][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 22:55:22,048][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 22:55:22,056][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 22:55:39,833][__main__][ERROR] - An error occurred in hydra_main: LlamaInterpretorWithLearnedSource.forward() got an unexpected keyword argument 'source_input_ids'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 650, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 489, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 166, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LlamaInterpretorWithLearnedSource.forward() got an unexpected keyword argument 'source_input_ids'
+[2025-02-08 22:56:37,247][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 22:56:37,247][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 22:56:37,247][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 22:56:37,247][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 22:56:37,382][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 22:56:37,390][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 22:56:55,081][__main__][ERROR] - An error occurred in hydra_main: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument index in method wrapper_CUDA__index_select)
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 650, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 489, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 166, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 603, in forward
+    self._run_target_model_for_encoded_hidden_states(
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 562, in _run_target_model_for_encoded_hidden_states
+    outputs = self.target_model(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 836, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 544, in forward
+    inputs_embeds = self.embed_tokens(input_ids)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/sparse.py", line 190, in forward
+    return F.embedding(
+           ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/functional.py", line 2551, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument index in method wrapper_CUDA__index_select)
+[2025-02-08 22:58:43,253][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 22:58:43,253][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 22:58:43,253][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 22:58:43,253][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 22:58:43,390][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 22:58:43,398][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:05:50,072][__main__][ERROR] - An error occurred in hydra_main: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument index in method wrapper_CUDA__index_select)
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 653, in run_train
+    inference_mode=mode,
+                         
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 492, in eval_accuracy
+    base_input_ids=batch["base_input_ids"],
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 169, in forward
+    editor_attention_mask=editor_input_ids
+                                ^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 603, in forward
+    self._run_target_model_for_encoded_hidden_states(
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 562, in _run_target_model_for_encoded_hidden_states
+    outputs = self.target_model(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 836, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 544, in forward
+    inputs_embeds = self.embed_tokens(input_ids)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/sparse.py", line 190, in forward
+    return F.embedding(
+           ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/functional.py", line 2551, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument index in method wrapper_CUDA__index_select)
+[2025-02-08 23:06:13,971][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:06:13,971][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:06:13,971][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:06:13,971][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:06:14,110][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:06:14,118][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:24:21,271][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 605, in forward
+    self._run_target_model_for_encoded_hidden_states(
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 563, in _run_target_model_for_encoded_hidden_states
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-08 23:24:31,708][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:24:31,708][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:24:31,708][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:24:31,708][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:24:31,844][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:24:31,852][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:24:50,907][__main__][ERROR] - An error occurred in hydra_main: LlamaAttention.forward() missing 1 required positional argument: 'position_embeddings'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 654, in forward
+    interpretor_output = self.hypernetwork(
+                         ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 439, in forward
+    transformer_outputs = self.model(
+                          ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 218, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/layers.py", line 221, in forward
+    hidden_states, self_attn_weights, present_key_value = self.self_attn(
+                                                          ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LlamaAttention.forward() missing 1 required positional argument: 'position_embeddings'
+[2025-02-08 23:32:49,168][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:32:49,169][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:32:49,169][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:32:49,169][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:32:49,306][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:32:49,314][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:33:08,404][__main__][ERROR] - An error occurred in hydra_main: LlamaAttention.forward() missing 1 required positional argument: 'position_embeddings'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 654, in forward
+    interpretor_output = self.hypernetwork(
+                         ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 439, in forward
+    transformer_outputs = self.model(
+                          ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 218, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/layers.py", line 286, in forward
+    hidden_states, self_attn_weights, present_key_value = self.self_attn(
+                                                          ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LlamaAttention.forward() missing 1 required positional argument: 'position_embeddings'
+[2025-02-08 23:41:10,117][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:41:10,117][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:41:10,118][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:41:10,118][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:41:10,255][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:41:10,263][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:41:30,021][__main__][ERROR] - An error occurred in hydra_main: LlamaModel._update_causal_mask() got an unexpected keyword argument 'output_attentions'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 654, in forward
+    interpretor_output = self.hypernetwork(
+                         ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 439, in forward
+    transformer_outputs = self.model(
+                          ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 184, in forward
+    causal_mask = self._update_causal_mask(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LlamaModel._update_causal_mask() got an unexpected keyword argument 'output_attentions'
+[2025-02-08 23:44:14,539][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:44:14,540][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:44:14,540][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:44:14,540][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:44:14,677][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:44:14,685][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:44:34,018][__main__][ERROR] - An error occurred in hydra_main: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu! (when checking argument for argument mat2 in method wrapper_CUDA_mm)
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 718, in forward
+    target_result = self.target_model(
+                    ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 1069, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 881, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1845, in _call_impl
+    return inner()
+           ^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1806, in inner
+    hook_result = hook(self, args, result)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 697, in representation_swap
+    self.das_module(base_hidden_states) * base_hidden_states_weight
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 79, in forward
+    rotated_base = self.rotate_layer(base)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 50, in forward
+    return torch.matmul(x.to(self.weight.dtype), self.weight)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu! (when checking argument for argument mat2 in method wrapper_CUDA_mm)
+[2025-02-08 23:45:38,094][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:45:38,094][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:45:38,094][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:45:38,095][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:45:38,328][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:45:38,335][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:46:20,898][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-08 23:46:20,898][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-08 23:46:21,196][__main__][ERROR] - An error occurred in hydra_main: 'LoreftIntervention' object has no attribute 'gradient_norms'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 777, in run_train
+    grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1928, in __getattr__
+    raise AttributeError(
+AttributeError: 'LoreftIntervention' object has no attribute 'gradient_norms'
+[2025-02-08 23:47:35,850][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:47:35,851][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:47:35,851][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:47:35,851][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:47:35,990][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:47:35,998][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:48:18,894][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-08 23:48:18,895][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-08 23:48:19,278][__main__][ERROR] - An error occurred in hydra_main: 'InterpretorModelOutput' object has no attribute 'metrics'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 796, in run_train
+    **prediction.metrics,
+      ^^^^^^^^^^^^^^^^^^
+AttributeError: 'InterpretorModelOutput' object has no attribute 'metrics'
+[2025-02-08 23:50:15,205][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:50:15,205][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:50:15,205][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:50:15,205][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:50:15,344][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:50:15,352][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:50:59,485][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-08 23:50:59,485][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-08 23:50:59,855][__main__][ERROR] - An error occurred in hydra_main: 'NoneType' object is not a mapping
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 791, in run_train
+    metrics = {
+              ^
+TypeError: 'NoneType' object is not a mapping
+[2025-02-08 23:51:53,769][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-08 23:51:53,769][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-08 23:51:53,769][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-08 23:51:53,769][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-08 23:51:53,910][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-08 23:51:53,917][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-08 23:52:13,885][__main__][ERROR] - An error occurred in hydra_main: InterpretorModelOutput should not have more than one required field.
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 729, in forward
+    output = InterpretorModelOutput(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 12, in __init__
+  File "/usr/local/lib/python3.12/dist-packages/transformers/utils/generic.py", line 371, in __post_init__
+    raise ValueError(f"{self.__class__.__name__} should not have more than one required field.")
+ValueError: InterpretorModelOutput should not have more than one required field.
+[2025-02-09 00:32:02,606][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:32:02,606][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:32:02,607][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:32:02,607][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:32:02,746][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:32:02,754][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:32:22,608][__main__][ERROR] - An error occurred in hydra_main: InterventionModuleOutput.__init__() got an unexpected keyword argument 'metric'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 728, in forward
+    target_result = self.target_model(
+                    ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 1069, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 881, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1845, in _call_impl
+    return inner()
+           ^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1806, in inner
+    hook_result = hook(self, args, result)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 703, in representation_swap
+    self.das_module(base_hidden_states) * base_hidden_states_weight
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 88, in forward
+    return InterventionModuleOutput(mixed_output=mixed_output, metric=metrics)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: InterventionModuleOutput.__init__() got an unexpected keyword argument 'metric'
+[2025-02-09 00:32:34,741][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:32:34,741][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:32:34,741][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:32:34,742][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:32:34,879][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:32:34,887][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:32:55,037][__main__][ERROR] - An error occurred in hydra_main: unsupported operand type(s) for *: 'InterventionModuleOutput' and 'Tensor'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 728, in forward
+    target_result = self.target_model(
+                    ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 1069, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 881, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1845, in _call_impl
+    return inner()
+           ^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1806, in inner
+    hook_result = hook(self, args, result)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 703, in representation_swap
+    self.das_module(base_hidden_states) * base_hidden_states_weight
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: unsupported operand type(s) for *: 'InterventionModuleOutput' and 'Tensor'
+[2025-02-09 00:40:33,478][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:40:33,478][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:40:33,478][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:40:33,478][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:40:33,619][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:40:33,628][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:40:54,006][__main__][ERROR] - An error occurred in hydra_main: LoreftIntervention.forward() got an unexpected keyword argument 'hidden_states'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 167, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 731, in forward
+    target_result = self.target_model(
+                    ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 1069, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 881, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1845, in _call_impl
+    return inner()
+           ^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1806, in inner
+    hook_result = hook(self, args, result)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 694, in representation_swap
+    intervention_output: InterventionModuleOutput = self.das_module(
+                                                    ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LoreftIntervention.forward() got an unexpected keyword argument 'hidden_states'
+[2025-02-09 00:41:25,260][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:41:25,261][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:41:25,261][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:41:25,261][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:41:25,399][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:41:25,407][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:42:08,422][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 00:42:08,422][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-09 00:42:08,791][__main__][ERROR] - An error occurred in hydra_main: 'NoneType' object is not a mapping
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 791, in run_train
+    metrics = {
+              ^
+TypeError: 'NoneType' object is not a mapping
+[2025-02-09 00:42:33,640][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:42:33,641][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:42:33,641][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:42:33,641][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:42:33,780][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:42:33,788][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:43:16,075][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 00:43:16,075][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-09 00:53:25,210][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 794, in run_train
+    "counters/step": cur_steps,
+                     ^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-09 00:53:36,600][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:53:36,600][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:53:36,600][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:53:36,600][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:53:36,753][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:53:36,761][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 00:54:19,375][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 00:54:19,375][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-09 00:54:19,744][src.hyperdas.llama3.model][INFO] - {'counters/step': 0, 'counters/epoch': 0.0, 'train_batch_prediction_loss': 47.434661865234375, 'grad_norm': 3.433941125869751}
+[2025-02-09 00:54:19,744][__main__][ERROR] - An error occurred in hydra_main: 'LoreftIntervention' object has no attribute 'set_temperature'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 815, in run_train
+    self.interpretor.das_module.set_temperature(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1928, in __getattr__
+    raise AttributeError(
+AttributeError: 'LoreftIntervention' object has no attribute 'set_temperature'
+[2025-02-09 00:59:47,676][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 00:59:47,677][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 00:59:47,677][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 00:59:47,677][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 00:59:47,816][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 00:59:47,824][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 01:00:30,145][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 01:00:30,145][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-09 01:00:30,515][src.hyperdas.llama3.model][INFO] - {'counters/step': 0, 'counters/epoch': 0.0, 'train_batch_prediction_loss': 47.434661865234375, 'grad_norm': 3.433941125869751}
+[2025-02-09 01:00:32,014][src.hyperdas.llama3.model][INFO] - {'counters/step': 5, 'counters/epoch': 0.006045949214026602, 'train_batch_prediction_loss': 31.465124130249023, 'grad_norm': 4.6374993324279785}
+[2025-02-09 01:00:33,514][src.hyperdas.llama3.model][INFO] - {'counters/step': 10, 'counters/epoch': 0.012091898428053204, 'train_batch_prediction_loss': 23.208038330078125, 'grad_norm': 4.785305500030518}
+[2025-02-09 01:00:35,013][src.hyperdas.llama3.model][INFO] - {'counters/step': 15, 'counters/epoch': 0.018137847642079808, 'train_batch_prediction_loss': 35.01323699951172, 'grad_norm': 7.808356761932373}
+[2025-02-09 01:00:36,508][src.hyperdas.llama3.model][INFO] - {'counters/step': 20, 'counters/epoch': 0.02418379685610641, 'train_batch_prediction_loss': 22.56153106689453, 'grad_norm': 6.839505672454834}
+[2025-02-09 01:00:38,011][src.hyperdas.llama3.model][INFO] - {'counters/step': 25, 'counters/epoch': 0.030229746070133012, 'train_batch_prediction_loss': 28.865764617919922, 'grad_norm': 11.81020736694336}
+[2025-02-09 01:00:39,517][src.hyperdas.llama3.model][INFO] - {'counters/step': 30, 'counters/epoch': 0.036275695284159616, 'train_batch_prediction_loss': 25.90753746032715, 'grad_norm': 11.929586410522461}
+[2025-02-09 01:00:41,020][src.hyperdas.llama3.model][INFO] - {'counters/step': 35, 'counters/epoch': 0.04232164449818621, 'train_batch_prediction_loss': 22.947912216186523, 'grad_norm': 16.718074798583984}
+[2025-02-09 01:00:42,515][src.hyperdas.llama3.model][INFO] - {'counters/step': 40, 'counters/epoch': 0.04836759371221282, 'train_batch_prediction_loss': 24.319419860839844, 'grad_norm': 26.733497619628906}
+[2025-02-09 01:00:44,011][src.hyperdas.llama3.model][INFO] - {'counters/step': 45, 'counters/epoch': 0.05441354292623942, 'train_batch_prediction_loss': 15.375486373901367, 'grad_norm': 19.396852493286133}
+[2025-02-09 01:00:45,517][src.hyperdas.llama3.model][INFO] - {'counters/step': 50, 'counters/epoch': 0.060459492140266025, 'train_batch_prediction_loss': 18.45973777770996, 'grad_norm': 24.024009704589844}
+[2025-02-09 01:00:47,018][src.hyperdas.llama3.model][INFO] - {'counters/step': 55, 'counters/epoch': 0.06650544135429262, 'train_batch_prediction_loss': 20.370466232299805, 'grad_norm': 35.88060760498047}
+[2025-02-09 01:00:48,518][src.hyperdas.llama3.model][INFO] - {'counters/step': 60, 'counters/epoch': 0.07255139056831923, 'train_batch_prediction_loss': 21.001630783081055, 'grad_norm': 15.47488021850586}
+[2025-02-09 01:00:50,018][src.hyperdas.llama3.model][INFO] - {'counters/step': 65, 'counters/epoch': 0.07859733978234583, 'train_batch_prediction_loss': 23.676366806030273, 'grad_norm': 41.50166702270508}
+[2025-02-09 01:00:51,519][src.hyperdas.llama3.model][INFO] - {'counters/step': 70, 'counters/epoch': 0.08464328899637243, 'train_batch_prediction_loss': 20.95302963256836, 'grad_norm': 22.820556640625}
+[2025-02-09 01:00:53,018][src.hyperdas.llama3.model][INFO] - {'counters/step': 75, 'counters/epoch': 0.09068923821039904, 'train_batch_prediction_loss': 18.136844635009766, 'grad_norm': 31.470205307006836}
+[2025-02-09 01:00:54,526][src.hyperdas.llama3.model][INFO] - {'counters/step': 80, 'counters/epoch': 0.09673518742442563, 'train_batch_prediction_loss': 22.06777572631836, 'grad_norm': 35.66773223876953}
+[2025-02-09 01:00:56,040][src.hyperdas.llama3.model][INFO] - {'counters/step': 85, 'counters/epoch': 0.10278113663845223, 'train_batch_prediction_loss': 20.504140853881836, 'grad_norm': 26.264972686767578}
+[2025-02-09 01:00:57,561][src.hyperdas.llama3.model][INFO] - {'counters/step': 90, 'counters/epoch': 0.10882708585247884, 'train_batch_prediction_loss': 15.721138000488281, 'grad_norm': 20.703964233398438}
+[2025-02-09 01:00:59,075][src.hyperdas.llama3.model][INFO] - {'counters/step': 95, 'counters/epoch': 0.11487303506650544, 'train_batch_prediction_loss': 18.15199089050293, 'grad_norm': 17.564035415649414}
+[2025-02-09 01:01:03,242][__main__][ERROR] - An error occurred in hydra_main: CUDA out of memory. Tried to allocate 2.32 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.96 GiB is free. Process 117409 has 20.01 GiB memory in use. Of the allocated memory 13.27 GiB is allocated by PyTorch, and 6.42 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 192, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 137, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 651, in run_train
+    accuracies, test_loss, _ = self.eval_accuracy(
+                               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 490, in eval_accuracy
+    predictions = self.forward(
+                  ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 183, in forward
+    log_prob_predictions = torch.nn.functional.log_softmax(
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/functional.py", line 2248, in log_softmax
+    ret = input.log_softmax(dim)
+          ^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.32 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.96 GiB is free. Process 117409 has 20.01 GiB memory in use. Of the allocated memory 13.27 GiB is allocated by PyTorch, and 6.42 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[2025-02-09 01:01:55,340][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-09 01:01:55,340][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-09 01:01:55,340][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-09 01:01:55,340][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-09 01:01:55,480][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-09 01:01:55,488][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer: 15
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: learned_source
+  chop_editor_at_layer: 15
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: ravel
+  train_path: experiments/RAVEL/gemma2_data/city_continent_train
+  test_path: experiments/RAVEL/gemma2_data/city_continent_test
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 8
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_target_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-09 01:02:37,866][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 01:02:37,866][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0433, Causal Acc: 0.0714, Isolate Acc: 0.0153, Test Loss: 16.2727
+[2025-02-09 01:02:38,165][src.hyperdas.llama3.model][INFO] - {'counters/step': 0, 'counters/epoch': 0.0, 'train_batch_prediction_loss': 41.61092758178711, 'grad_norm': 4.038726329803467}
+[2025-02-09 01:02:39,263][src.hyperdas.llama3.model][INFO] - {'counters/step': 5, 'counters/epoch': 0.003022974607013301, 'train_batch_prediction_loss': 20.51647186279297, 'grad_norm': 4.462212085723877}
+[2025-02-09 01:02:40,325][src.hyperdas.llama3.model][INFO] - {'counters/step': 10, 'counters/epoch': 0.006045949214026602, 'train_batch_prediction_loss': 29.28122329711914, 'grad_norm': 5.398568630218506}
+[2025-02-09 01:02:41,404][src.hyperdas.llama3.model][INFO] - {'counters/step': 15, 'counters/epoch': 0.009068923821039904, 'train_batch_prediction_loss': 40.272544860839844, 'grad_norm': 14.173965454101562}
+[2025-02-09 01:02:42,487][src.hyperdas.llama3.model][INFO] - {'counters/step': 20, 'counters/epoch': 0.012091898428053204, 'train_batch_prediction_loss': 27.98003387451172, 'grad_norm': 11.34095287322998}
+[2025-02-09 01:02:43,572][src.hyperdas.llama3.model][INFO] - {'counters/step': 25, 'counters/epoch': 0.015114873035066506, 'train_batch_prediction_loss': 18.616182327270508, 'grad_norm': 6.636052131652832}
+[2025-02-09 01:02:44,637][src.hyperdas.llama3.model][INFO] - {'counters/step': 30, 'counters/epoch': 0.018137847642079808, 'train_batch_prediction_loss': 22.118614196777344, 'grad_norm': 17.611221313476562}
+[2025-02-09 01:02:45,719][src.hyperdas.llama3.model][INFO] - {'counters/step': 35, 'counters/epoch': 0.021160822249093107, 'train_batch_prediction_loss': 27.98139190673828, 'grad_norm': 37.469932556152344}
+[2025-02-09 01:02:46,795][src.hyperdas.llama3.model][INFO] - {'counters/step': 40, 'counters/epoch': 0.02418379685610641, 'train_batch_prediction_loss': 24.74833106994629, 'grad_norm': 25.093994140625}
+[2025-02-09 01:02:47,883][src.hyperdas.llama3.model][INFO] - {'counters/step': 45, 'counters/epoch': 0.02720677146311971, 'train_batch_prediction_loss': 21.653892517089844, 'grad_norm': 59.5728874206543}
+[2025-02-09 01:02:48,948][src.hyperdas.llama3.model][INFO] - {'counters/step': 50, 'counters/epoch': 0.030229746070133012, 'train_batch_prediction_loss': 22.21207046508789, 'grad_norm': 46.056007385253906}
+[2025-02-09 01:02:50,039][src.hyperdas.llama3.model][INFO] - {'counters/step': 55, 'counters/epoch': 0.03325272067714631, 'train_batch_prediction_loss': 18.84524917602539, 'grad_norm': 28.83905792236328}
+[2025-02-09 01:02:51,138][src.hyperdas.llama3.model][INFO] - {'counters/step': 60, 'counters/epoch': 0.036275695284159616, 'train_batch_prediction_loss': 18.01259994506836, 'grad_norm': 27.681692123413086}
+[2025-02-09 01:02:52,229][src.hyperdas.llama3.model][INFO] - {'counters/step': 65, 'counters/epoch': 0.039298669891172915, 'train_batch_prediction_loss': 19.463422775268555, 'grad_norm': 35.91099166870117}
+[2025-02-09 01:02:53,317][src.hyperdas.llama3.model][INFO] - {'counters/step': 70, 'counters/epoch': 0.04232164449818621, 'train_batch_prediction_loss': 26.86043930053711, 'grad_norm': 29.47271156311035}
+[2025-02-09 01:02:54,401][src.hyperdas.llama3.model][INFO] - {'counters/step': 75, 'counters/epoch': 0.04534461910519952, 'train_batch_prediction_loss': 26.560928344726562, 'grad_norm': 30.310523986816406}
+[2025-02-09 01:02:55,464][src.hyperdas.llama3.model][INFO] - {'counters/step': 80, 'counters/epoch': 0.04836759371221282, 'train_batch_prediction_loss': 23.46493911743164, 'grad_norm': 66.8313980102539}
+[2025-02-09 01:02:56,539][src.hyperdas.llama3.model][INFO] - {'counters/step': 85, 'counters/epoch': 0.051390568319226115, 'train_batch_prediction_loss': 12.356642723083496, 'grad_norm': 51.822425842285156}
+[2025-02-09 01:02:57,628][src.hyperdas.llama3.model][INFO] - {'counters/step': 90, 'counters/epoch': 0.05441354292623942, 'train_batch_prediction_loss': 14.832595825195312, 'grad_norm': 36.81713104248047}
+[2025-02-09 01:02:58,696][src.hyperdas.llama3.model][INFO] - {'counters/step': 95, 'counters/epoch': 0.05743651753325272, 'train_batch_prediction_loss': 20.756858825683594, 'grad_norm': 103.21819305419922}
+[2025-02-09 01:03:23,098][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 01:03:23,098][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0710, Causal Acc: 0.1366, Isolate Acc: 0.0055, Test Loss: 11.3380
+[2025-02-09 01:03:23,403][src.hyperdas.llama3.model][INFO] - {'counters/step': 100, 'counters/epoch': 0.060459492140266025, 'train_batch_prediction_loss': 17.176366806030273, 'grad_norm': 23.05400276184082}
+[2025-02-09 01:03:24,507][src.hyperdas.llama3.model][INFO] - {'counters/step': 105, 'counters/epoch': 0.06348246674727932, 'train_batch_prediction_loss': 24.39441680908203, 'grad_norm': 27.837955474853516}
+[2025-02-09 01:03:25,581][src.hyperdas.llama3.model][INFO] - {'counters/step': 110, 'counters/epoch': 0.06650544135429262, 'train_batch_prediction_loss': 15.805351257324219, 'grad_norm': 36.48713302612305}
+[2025-02-09 01:03:26,658][src.hyperdas.llama3.model][INFO] - {'counters/step': 115, 'counters/epoch': 0.06952841596130592, 'train_batch_prediction_loss': 21.532577514648438, 'grad_norm': 28.99755859375}
+[2025-02-09 01:03:27,756][src.hyperdas.llama3.model][INFO] - {'counters/step': 120, 'counters/epoch': 0.07255139056831923, 'train_batch_prediction_loss': 17.42645835876465, 'grad_norm': 23.032215118408203}
+[2025-02-09 01:03:28,843][src.hyperdas.llama3.model][INFO] - {'counters/step': 125, 'counters/epoch': 0.07557436517533253, 'train_batch_prediction_loss': 19.763336181640625, 'grad_norm': 31.157657623291016}
+[2025-02-09 01:03:29,924][src.hyperdas.llama3.model][INFO] - {'counters/step': 130, 'counters/epoch': 0.07859733978234583, 'train_batch_prediction_loss': 28.537187576293945, 'grad_norm': 54.58983612060547}
+[2025-02-09 01:03:31,024][src.hyperdas.llama3.model][INFO] - {'counters/step': 135, 'counters/epoch': 0.08162031438935913, 'train_batch_prediction_loss': 17.230100631713867, 'grad_norm': 36.3060302734375}
+[2025-02-09 01:03:32,127][src.hyperdas.llama3.model][INFO] - {'counters/step': 140, 'counters/epoch': 0.08464328899637243, 'train_batch_prediction_loss': 16.92693328857422, 'grad_norm': 59.9034538269043}
+[2025-02-09 01:03:33,192][src.hyperdas.llama3.model][INFO] - {'counters/step': 145, 'counters/epoch': 0.08766626360338574, 'train_batch_prediction_loss': 17.818281173706055, 'grad_norm': 58.510005950927734}
+[2025-02-09 01:03:34,266][src.hyperdas.llama3.model][INFO] - {'counters/step': 150, 'counters/epoch': 0.09068923821039904, 'train_batch_prediction_loss': 13.426712036132812, 'grad_norm': 65.5639419555664}
+[2025-02-09 01:03:35,340][src.hyperdas.llama3.model][INFO] - {'counters/step': 155, 'counters/epoch': 0.09371221281741234, 'train_batch_prediction_loss': 10.579336166381836, 'grad_norm': 19.981191635131836}
+[2025-02-09 01:03:36,433][src.hyperdas.llama3.model][INFO] - {'counters/step': 160, 'counters/epoch': 0.09673518742442563, 'train_batch_prediction_loss': 14.53028392791748, 'grad_norm': 52.532615661621094}
+[2025-02-09 01:03:37,545][src.hyperdas.llama3.model][INFO] - {'counters/step': 165, 'counters/epoch': 0.09975816203143893, 'train_batch_prediction_loss': 11.90074348449707, 'grad_norm': 27.35808563232422}
+[2025-02-09 01:03:38,635][src.hyperdas.llama3.model][INFO] - {'counters/step': 170, 'counters/epoch': 0.10278113663845223, 'train_batch_prediction_loss': 13.075376510620117, 'grad_norm': 47.57284164428711}
+[2025-02-09 01:03:39,731][src.hyperdas.llama3.model][INFO] - {'counters/step': 175, 'counters/epoch': 0.10580411124546554, 'train_batch_prediction_loss': 12.514004707336426, 'grad_norm': 37.0917854309082}
+[2025-02-09 01:03:40,830][src.hyperdas.llama3.model][INFO] - {'counters/step': 180, 'counters/epoch': 0.10882708585247884, 'train_batch_prediction_loss': 15.338293075561523, 'grad_norm': 37.13309097290039}
+[2025-02-09 01:03:41,952][src.hyperdas.llama3.model][INFO] - {'counters/step': 185, 'counters/epoch': 0.11185006045949214, 'train_batch_prediction_loss': 13.228410720825195, 'grad_norm': 53.20855712890625}
+[2025-02-09 01:03:43,028][src.hyperdas.llama3.model][INFO] - {'counters/step': 190, 'counters/epoch': 0.11487303506650544, 'train_batch_prediction_loss': 11.316878318786621, 'grad_norm': 31.12141990661621}
+[2025-02-09 01:03:44,116][src.hyperdas.llama3.model][INFO] - {'counters/step': 195, 'counters/epoch': 0.11789600967351874, 'train_batch_prediction_loss': 15.75401782989502, 'grad_norm': 49.076171875}
+[2025-02-09 01:04:08,783][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 01:04:08,783][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0597, Causal Acc: 0.1173, Isolate Acc: 0.0022, Test Loss: 9.6489
+[2025-02-09 01:04:08,998][src.hyperdas.llama3.model][INFO] - {'counters/step': 200, 'counters/epoch': 0.12091898428053205, 'train_batch_prediction_loss': 12.851512908935547, 'grad_norm': 52.738624572753906}
+[2025-02-09 01:04:10,122][src.hyperdas.llama3.model][INFO] - {'counters/step': 205, 'counters/epoch': 0.12394195888754535, 'train_batch_prediction_loss': 14.957296371459961, 'grad_norm': 66.61032104492188}
+[2025-02-09 01:04:11,225][src.hyperdas.llama3.model][INFO] - {'counters/step': 210, 'counters/epoch': 0.12696493349455865, 'train_batch_prediction_loss': 11.89379596710205, 'grad_norm': 58.373836517333984}
+[2025-02-09 01:04:12,319][src.hyperdas.llama3.model][INFO] - {'counters/step': 215, 'counters/epoch': 0.12998790810157196, 'train_batch_prediction_loss': 15.592434883117676, 'grad_norm': 62.86984634399414}
+[2025-02-09 01:04:13,425][src.hyperdas.llama3.model][INFO] - {'counters/step': 220, 'counters/epoch': 0.13301088270858524, 'train_batch_prediction_loss': 17.62362289428711, 'grad_norm': 47.23997116088867}
+[2025-02-09 01:04:14,524][src.hyperdas.llama3.model][INFO] - {'counters/step': 225, 'counters/epoch': 0.13603385731559856, 'train_batch_prediction_loss': 10.75970458984375, 'grad_norm': 61.648231506347656}
+[2025-02-09 01:04:15,624][src.hyperdas.llama3.model][INFO] - {'counters/step': 230, 'counters/epoch': 0.13905683192261184, 'train_batch_prediction_loss': 18.425004959106445, 'grad_norm': 88.63229370117188}
+[2025-02-09 01:04:16,729][src.hyperdas.llama3.model][INFO] - {'counters/step': 235, 'counters/epoch': 0.14207980652962515, 'train_batch_prediction_loss': 11.683695793151855, 'grad_norm': 32.64460372924805}
+[2025-02-09 01:04:17,803][src.hyperdas.llama3.model][INFO] - {'counters/step': 240, 'counters/epoch': 0.14510278113663846, 'train_batch_prediction_loss': 13.984253883361816, 'grad_norm': 53.52812576293945}
+[2025-02-09 01:04:18,896][src.hyperdas.llama3.model][INFO] - {'counters/step': 245, 'counters/epoch': 0.14812575574365175, 'train_batch_prediction_loss': 14.472607612609863, 'grad_norm': 78.23809814453125}
+[2025-02-09 01:04:19,997][src.hyperdas.llama3.model][INFO] - {'counters/step': 250, 'counters/epoch': 0.15114873035066506, 'train_batch_prediction_loss': 11.97812271118164, 'grad_norm': 61.44213104248047}
+[2025-02-09 01:04:21,100][src.hyperdas.llama3.model][INFO] - {'counters/step': 255, 'counters/epoch': 0.15417170495767835, 'train_batch_prediction_loss': 14.340581893920898, 'grad_norm': 60.39447021484375}
+[2025-02-09 01:04:22,216][src.hyperdas.llama3.model][INFO] - {'counters/step': 260, 'counters/epoch': 0.15719467956469166, 'train_batch_prediction_loss': 11.374382972717285, 'grad_norm': 54.650352478027344}
+[2025-02-09 01:04:23,299][src.hyperdas.llama3.model][INFO] - {'counters/step': 265, 'counters/epoch': 0.16021765417170497, 'train_batch_prediction_loss': 9.368919372558594, 'grad_norm': 73.64379119873047}
+[2025-02-09 01:04:24,396][src.hyperdas.llama3.model][INFO] - {'counters/step': 270, 'counters/epoch': 0.16324062877871826, 'train_batch_prediction_loss': 14.127885818481445, 'grad_norm': 20.160175323486328}
+[2025-02-09 01:04:25,510][src.hyperdas.llama3.model][INFO] - {'counters/step': 275, 'counters/epoch': 0.16626360338573157, 'train_batch_prediction_loss': 15.052969932556152, 'grad_norm': 36.2116584777832}
+[2025-02-09 01:04:26,622][src.hyperdas.llama3.model][INFO] - {'counters/step': 280, 'counters/epoch': 0.16928657799274485, 'train_batch_prediction_loss': 11.650614738464355, 'grad_norm': 52.24843978881836}
+[2025-02-09 01:04:27,700][src.hyperdas.llama3.model][INFO] - {'counters/step': 285, 'counters/epoch': 0.17230955259975816, 'train_batch_prediction_loss': 9.433144569396973, 'grad_norm': 53.42072677612305}
+[2025-02-09 01:04:28,793][src.hyperdas.llama3.model][INFO] - {'counters/step': 290, 'counters/epoch': 0.17533252720677148, 'train_batch_prediction_loss': 9.591690063476562, 'grad_norm': 75.81684875488281}
+[2025-02-09 01:04:29,876][src.hyperdas.llama3.model][INFO] - {'counters/step': 295, 'counters/epoch': 0.17835550181378476, 'train_batch_prediction_loss': 12.768245697021484, 'grad_norm': 59.57329559326172}
+[2025-02-09 01:04:54,995][src.hyperdas.llama3.model][INFO] - [city_continent_test] Under Inference Mode: groundtruth
+[2025-02-09 01:04:54,996][src.hyperdas.llama3.model][INFO] - [city_continent_test] Disentangle Acc: 0.0718, Causal Acc: 0.1403, Isolate Acc: 0.0033, Test Loss: 9.3642
+[2025-02-09 01:04:55,213][src.hyperdas.llama3.model][INFO] - {'counters/step': 300, 'counters/epoch': 0.18137847642079807, 'train_batch_prediction_loss': 11.497607231140137, 'grad_norm': 65.79316711425781}
+[2025-02-09 01:04:56,329][src.hyperdas.llama3.model][INFO] - {'counters/step': 305, 'counters/epoch': 0.18440145102781136, 'train_batch_prediction_loss': 11.674686431884766, 'grad_norm': 33.724708557128906}
+[2025-02-09 01:04:57,445][src.hyperdas.llama3.model][INFO] - {'counters/step': 310, 'counters/epoch': 0.18742442563482467, 'train_batch_prediction_loss': 13.423571586608887, 'grad_norm': 61.144447326660156}
+[2025-02-09 01:04:58,561][src.hyperdas.llama3.model][INFO] - {'counters/step': 315, 'counters/epoch': 0.19044740024183796, 'train_batch_prediction_loss': 11.780558586120605, 'grad_norm': 40.144962310791016}
+[2025-02-09 01:04:59,669][src.hyperdas.llama3.model][INFO] - {'counters/step': 320, 'counters/epoch': 0.19347037484885127, 'train_batch_prediction_loss': 11.021939277648926, 'grad_norm': 36.88307571411133}
+[2025-02-09 01:05:00,776][src.hyperdas.llama3.model][INFO] - {'counters/step': 325, 'counters/epoch': 0.19649334945586458, 'train_batch_prediction_loss': 11.007844924926758, 'grad_norm': 65.90274810791016}
+[2025-02-09 01:05:01,844][src.hyperdas.llama3.model][INFO] - {'counters/step': 330, 'counters/epoch': 0.19951632406287786, 'train_batch_prediction_loss': 11.569790840148926, 'grad_norm': 42.50210952758789}
+[2025-02-09 01:05:02,947][src.hyperdas.llama3.model][INFO] - {'counters/step': 335, 'counters/epoch': 0.20253929866989118, 'train_batch_prediction_loss': 18.94139862060547, 'grad_norm': 44.42586898803711}
+[2025-02-09 01:05:04,041][src.hyperdas.llama3.model][INFO] - {'counters/step': 340, 'counters/epoch': 0.20556227327690446, 'train_batch_prediction_loss': 13.9841890335083, 'grad_norm': 42.60682678222656}
+[2025-02-09 01:05:05,158][src.hyperdas.llama3.model][INFO] - {'counters/step': 345, 'counters/epoch': 0.20858524788391777, 'train_batch_prediction_loss': 18.098962783813477, 'grad_norm': 52.251609802246094}
+[2025-02-09 01:05:06,292][src.hyperdas.llama3.model][INFO] - {'counters/step': 350, 'counters/epoch': 0.21160822249093109, 'train_batch_prediction_loss': 12.943949699401855, 'grad_norm': 55.356109619140625}
+[2025-02-09 01:05:07,387][src.hyperdas.llama3.model][INFO] - {'counters/step': 355, 'counters/epoch': 0.21463119709794437, 'train_batch_prediction_loss': 10.122017860412598, 'grad_norm': 35.808311462402344}
+[2025-02-09 01:05:08,492][src.hyperdas.llama3.model][INFO] - {'counters/step': 360, 'counters/epoch': 0.21765417170495768, 'train_batch_prediction_loss': 13.5662260055542, 'grad_norm': 86.4940414428711}
+[2025-02-09 01:05:09,620][src.hyperdas.llama3.model][INFO] - {'counters/step': 365, 'counters/epoch': 0.22067714631197097, 'train_batch_prediction_loss': 12.77843189239502, 'grad_norm': 37.08839797973633}
+[2025-02-09 01:05:10,701][src.hyperdas.llama3.model][INFO] - {'counters/step': 370, 'counters/epoch': 0.22370012091898428, 'train_batch_prediction_loss': 12.644513130187988, 'grad_norm': 46.0047607421875}
+[2025-02-09 01:05:11,825][src.hyperdas.llama3.model][INFO] - {'counters/step': 375, 'counters/epoch': 0.2267230955259976, 'train_batch_prediction_loss': 11.91088581085205, 'grad_norm': 32.781105041503906}
+[2025-02-09 01:05:12,952][src.hyperdas.llama3.model][INFO] - {'counters/step': 380, 'counters/epoch': 0.22974607013301088, 'train_batch_prediction_loss': 13.222391128540039, 'grad_norm': 20.468841552734375}
+[2025-02-09 01:05:14,044][src.hyperdas.llama3.model][INFO] - {'counters/step': 385, 'counters/epoch': 0.2327690447400242, 'train_batch_prediction_loss': 17.706981658935547, 'grad_norm': 33.52167892456055}
+[2025-02-09 01:05:15,160][src.hyperdas.llama3.model][INFO] - {'counters/step': 390, 'counters/epoch': 0.23579201934703747, 'train_batch_prediction_loss': 9.994400978088379, 'grad_norm': 102.43498229980469}
+[2025-02-09 01:05:16,246][src.hyperdas.llama3.model][INFO] - {'counters/step': 395, 'counters/epoch': 0.23881499395405079, 'train_batch_prediction_loss': 10.130617141723633, 'grad_norm': 32.254512786865234}
