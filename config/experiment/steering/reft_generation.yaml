@@ -1,0 +1,30 @@
+defaults:
+  - /model/tinyllama_gemma2b_reft
+  - /dataset/axbench16k
+  - /training/base
+  - /loss/base
+  - /wandb_config/base
+  - _self_
+
+# Move all configurations under their respective groups
+model:
+  subspace_module: "LoReFT"
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  intervention_layer: 15
+  intervention_layers: [2, 4, 6, 8]
+  intervention_positions: "f7+l7"
+
+training:
+  n_epochs: 1
+  n_steps: 500
+  eval_per_steps: 100
+  save_model: true
+  debug_model: true
+
+loss:
+  return_penalty: false
+
+wandb_config:
+  group: llama38b_gemma2b_hyperloreft_steer

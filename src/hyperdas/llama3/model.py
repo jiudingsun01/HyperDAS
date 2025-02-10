@@ -1,27 +1,34 @@
 import json
 import os
+from abc import ABC, abstractmethod
 from math import ceil
-from typing import List, Optional
+from typing import Dict, List, Optional
+import pandas as pd
 
+import httpx
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
+from openai import AsyncOpenAI
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoConfig, AutoTokenizer
 
 import wandb
+from axbench.axbench.evaluators.lm_judge import LMJudgeEvaluator
+from axbench.axbench.evaluators.winrate import WinRateEvaluator
+from axbench.axbench.models.language_models import LanguageModel
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
 from ..utils import InterpretorModelOutput, NamedDataLoader
 from .modules import (
     LlamaInterpretor,
+    LlamaInterpretorConfig,
     LlamaInterpretorForReFTGeneration,
     LlamaInterpretorWithLearnedSource,
-    LlamaInterpretorConfig,
 )
 
 logger = get_logger(__name__)
@@ -33,12 +40,12 @@ INTERPRETOR_CLS = {
 }
 
 
-class RavelInterpretorHypernetwork(nn.Module):
+class BaseInterpretorHypernetwork(nn.Module, ABC):
     def __init__(self, config: DictConfig, device):
         super().__init__()
-
         self.config = config
         self.device = device
+
         self.interpretor_config: LlamaInterpretorConfig = (
             LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
         )
@@ -55,14 +62,55 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.initialize_from_scratch = (
             config.model.initialize_from_scratch
         )
+
+        # Tokenizer setup
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+        self.residual_cache = None
+        self.opt = None
+        self.max_eval_steps = config.training.max_eval_steps
+
+        # Dummy initialization for typing
+        self.interpretor: LlamaInterpretor = None
+
+    def save_model(self, save_dir):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        torch.save(
+            self.interpretor.hypernetwork.state_dict(),
+            os.path.join(save_dir, "hypernetwork.pt"),
+        )
+
+    def load_model(self, load_dir):
+        self.interpretor.hypernetwork.load_state_dict(
+            torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
+        )
+
+    @abstractmethod
+    def forward(self, **kwargs) -> InterpretorModelOutput:
+        pass
+
+    @abstractmethod
+    def eval_accuracy(self, test_loaders, **kwargs):
+        pass
+
+    @abstractmethod
+    def run_train(self, train_loader, test_loader=None):
+        pass
+
+
+class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
+    def __init__(self, config: DictConfig, device):
+        super().__init__(config, device)
         self.interpretor_config.das_dimension = config.model.das_dimension
 
         # Target model configs
-        target_model_config = AutoConfig.from_pretrained(
+        self.target_model_config = AutoConfig.from_pretrained(
             config.model.target_model_name_or_path
-        )
-        self.interpretor_config.num_target_model_layers = (
-            target_model_config.num_hidden_layers
         )
 
         # Ablation configs
@@ -89,11 +137,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.selection_mechanism = config.model.selection_mechanism
         self.interpretor_config.hat_matrix = config.model.hat_matrix
 
-        # Reft parameters
-        self.interpretor_config.target_hidden_size = config.model.target_hidden_size
-        self.interpretor_config.num_target_layers = config.model.num_target_layers
-        self.interpretor_config.num_target_positions = config.model.num_target_positions
-
         # Initialize model components
         interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
         if interpretor_cls is None:
@@ -106,12 +149,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             device=self.device,
         )
 
-        # Tokenizer setup
-        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
         # DAS configs
         self.use_das_intervention = config.model.subspace_module is not None
         self.das_dim = config.model.das_dimension
@@ -122,19 +159,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.das_temperature_start = config.training.get("das_temperature_start", 50.0)
         self.das_temperature_end = config.training.get("das_temperature_end", 0.1)
 
-        # Other configs
-        self.residual_cache = None
-        self.opt = None
-        self.max_eval_steps = config.training.max_eval_steps
-
     def save_model(self, save_dir):
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        torch.save(
-            self.interpretor.hypernetwork.state_dict(),
-            os.path.join(save_dir, "hypernetwork.pt"),
-        )
+        super().save_model(save_dir)
         if self.use_das_intervention:
             torch.save(
                 self.interpretor.das_module.state_dict(),
@@ -142,9 +168,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             )
 
     def load_model(self, load_dir):
-        self.interpretor.hypernetwork.load_state_dict(
-            torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
-        )
+        super().load_model(load_dir)
         if self.use_das_intervention:
             self.interpretor.das_module.load_state_dict(
                 torch.load(os.path.join(load_dir, "das.pt"), weights_only=True)
@@ -155,20 +179,20 @@ class RavelInterpretorHypernetwork(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: torch.Tensor = None,
-        base_input_ids: torch.Tensor = None,
-        base_attention_mask: torch.Tensor = None,
-        base_intervention_mask: torch.Tensor = None,
-        source_input_ids: torch.Tensor = None,
-        source_attention_mask: torch.Tensor = None,
-        source_intervention_mask: torch.Tensor = None,
-        labels: torch.Tensor = None,
+        editor_input_ids: Optional[torch.LongTensor] = None,
+        base_input_ids: Optional[torch.LongTensor] = None,
+        base_attention_mask: Optional[torch.FloatTensor] = None,
+        base_intervention_mask: Optional[torch.FloatTensor] = None,
+        source_input_ids: Optional[torch.LongTensor] = None,
+        source_attention_mask: Optional[torch.FloatTensor] = None,
+        source_intervention_mask: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
         output_intervention_weight: bool = True,
-        is_causal: torch.Tensor = None,
+        is_causal: Optional[torch.BoolTensor] = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
-        source_intervention_weight: torch.Tensor = None,
-        base_intervention_weight: torch.Tensor = None,
+        source_intervention_weight: Optional[torch.FloatTensor] = None,
+        base_intervention_weight: Optional[torch.FloatTensor] = None,
     ) -> InterpretorModelOutput:
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
@@ -652,49 +676,46 @@ class RavelInterpretorHypernetwork(nn.Module):
                         break
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
-                            if self.config.dataset.dataset_type == "ravel":
-                                # Evaluate the model
-                                for mode in inference_modes:
-                                    accuracies, test_loss, _ = self.eval_accuracy(
-                                        test_loader,
-                                        inference_mode=mode,
-                                        eval_n_label_tokens=3,
+                            # Evaluate the model
+                            for mode in inference_modes:
+                                accuracies, test_loss, _ = self.eval_accuracy(
+                                    test_loader,
+                                    inference_mode=mode,
+                                    eval_n_label_tokens=3,
+                                )
+
+                                text_mode = "default" if mode is None else mode
+
+                                for loader in test_loader:
+                                    causal_acc = accuracies[loader.name]["causal"]
+                                    isolate_acc = accuracies[loader.name]["isolate"]
+                                    disentangle_acc = accuracies[loader.name][
+                                        "disentangle"
+                                    ]
+
+                                    if wandb.run:
+                                        wandb.log(
+                                            {
+                                                f"{loader.name}/{text_mode}_test_average_loss": test_loss,
+                                                f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
+                                                f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
+                                                f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
+                                            }
+                                        )
+
+                                    logger.info(
+                                        "[%s] Under Inference Mode: %s",
+                                        loader.name,
+                                        text_mode,
                                     )
-
-                                    text_mode = "default" if mode is None else mode
-
-                                    for loader in test_loader:
-                                        causal_acc = accuracies[loader.name]["causal"]
-                                        isolate_acc = accuracies[loader.name]["isolate"]
-                                        disentangle_acc = accuracies[loader.name][
-                                            "disentangle"
-                                        ]
-
-                                        if wandb.run:
-                                            wandb.log(
-                                                {
-                                                    f"{loader.name}/{text_mode}_test_average_loss": test_loss,
-                                                    f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
-                                                    f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
-                                                    f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
-                                                }
-                                            )
-
-                                        logger.info(
-                                            "[%s] Under Inference Mode: %s",
-                                            loader.name,
-                                            text_mode,
-                                        )
-                                        logger.info(
-                                            "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
-                                            loader.name,
-                                            disentangle_acc,
-                                            causal_acc,
-                                            isolate_acc,
-                                            test_loss[loader.name],
-                                        )
-                            elif self.config.dataset.dataset_type == "axbench":
-                                raise NotImplementedError
+                                    logger.info(
+                                        "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
+                                        loader.name,
+                                        disentangle_acc,
+                                        causal_acc,
+                                        isolate_acc,
+                                        test_loss[loader.name],
+                                    )
 
                     if checkpoint_per_steps is not None:
                         if (
@@ -850,6 +871,495 @@ class RavelInterpretorHypernetwork(nn.Module):
 
             for k, v in accs.items():
                 logger.info(f"{inference_mode} {k}: {v}")
+
+        # Save the final model
+        if save_model and save_dir:
+            self.save_model(os.path.join(save_dir, run_name, "final_model"))
+        if save_dir:
+            json.dump(
+                result_dict,
+                open(os.path.join(save_dir, run_name, "final_result.json"), "w"),
+            )
+
+
+class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
+    def __init__(self, config: DictConfig, device):
+        super().__init__(config, device)
+
+        # Initialize model components
+        interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
+        if interpretor_cls is None:
+            raise ValueError("Invalid interpretor type")
+        self.interpretor = interpretor_cls(
+            self.interpretor_config,
+            target_model_name_or_path=config.model.target_model_name_or_path,
+            subspace_module=config.model.subspace_module,
+            compute_metrics=config.training.compute_metrics,
+            device=self.device,
+        )
+
+        self.lm_judge_evaluator = None
+        self.winrate_evaluator = None
+
+    def forward(
+        self,
+        editor_input_ids: Optional[torch.LongTensor] = None,
+        base_input_ids: Optional[torch.LongTensor] = None,
+        base_attention_mask: Optional[torch.FloatTensor] = None,
+        base_intervention_mask: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_intervention_weight: bool = True,
+        is_causal: Optional[torch.BoolTensor] = None,
+        causal_loss_weight: float = 1.0,
+        iso_loss_weight: float = 1.0,
+        base_intervention_weight: Optional[torch.FloatTensor] = None,
+    ) -> InterpretorModelOutput:
+        _pred: InterpretorModelOutput = self.interpretor(
+            editor_input_ids=editor_input_ids,
+            editor_attention_mask=editor_input_ids
+            != self.interpretor_config.eos_token_id,
+            base_input_ids=base_input_ids,
+            base_attention_mask=base_attention_mask,
+            base_intervention_mask=base_intervention_mask,
+            output_intervention_weight=output_intervention_weight,
+            base_intervention_weight=base_intervention_weight,
+        )
+
+        if labels is not None:
+            log_prob_predictions = torch.nn.functional.log_softmax(
+                _pred.logits.reshape(-1, _pred.logits.shape[-1]),
+                dim=1,
+            )
+
+            if is_causal is not None:
+                loss_weight = torch.ones_like(labels, dtype=log_prob_predictions.dtype)
+                loss_weight[is_causal, :] = causal_loss_weight
+                loss_weight[~is_causal, :] = iso_loss_weight
+
+            labels = labels.reshape(-1)
+
+            if is_causal is not None:
+                loss_weight = loss_weight.reshape(-1)
+
+            assert labels.shape == log_prob_predictions.shape[:-1]
+
+            # Only consider the tokens that are not -100 in target_labels
+            label_indices = labels != -100
+            output_idices = torch.zeros_like(label_indices)
+            output_idices[:-1] = label_indices[1:]
+
+            log_prob_predictions = log_prob_predictions[output_idices, :]
+
+            labels = labels[label_indices]
+
+            # Compute the cross-entropy loss with masking
+            if is_causal is None:
+                criterion = torch.nn.CrossEntropyLoss(reduction="mean")
+                loss = criterion(log_prob_predictions, labels.long())
+            else:
+                loss_weight = loss_weight[label_indices]
+                criterion = torch.nn.CrossEntropyLoss(reduction="none")
+                loss = criterion(log_prob_predictions, labels.long())
+
+                loss = (loss * loss_weight).mean()
+
+            _pred["loss"] = loss
+
+        return _pred
+
+    def setup_evaluators(
+        self, judge_model, baseline_model="PromptSteering", concept_id=None
+    ):
+        # Create LanguageModel instance within the worker process
+        client = AsyncOpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY"),
+            timeout=60.0,
+            http_client=httpx.AsyncClient(
+                limits=httpx.Limits(
+                    max_keepalive_connections=100, max_connections=1000
+                ),
+                headers={"Connection": "close"},
+            ),
+            max_retries=3,
+        )
+        lm_model = LanguageModel(
+            judge_model,
+            client,
+            dump_dir="assets/lm_cache",
+            use_cache=True,
+            cache_level="prompt",
+            cache_tag="evaluate",
+            master_data_dir="axbench/data",
+            temperature=0.7,
+        )
+
+        self.lm_judge_evaluator = LMJudgeEvaluator(
+            model_name=judge_model,
+            lm_model=lm_model,
+            concept_id=concept_id,
+        )
+        self.winrate_evaluator = WinRateEvaluator(
+            model_name=self.config.name_or_path,
+            baseline_model=baseline_model,
+            concept_id=concept_id,
+        )
+
+    def evaluate_axbench(self, eval_data) -> Dict[str, float]:
+        """
+        Evaluate model performance using LMJudge and WinRate metrics
+
+        Args:
+            eval_data: pandas DataFrame containing:
+                - input_concept: concept being evaluated
+                - original_prompt: original instruction/prompt
+                - {model_name}_steered_generation: generated text from the model
+                - factor: experimental condition/factor
+                For WinRate also needs:
+                - {baseline_model}_steered_generation: generated text from baseline
+        """
+        if self.lm_judge_evaluator is None or self.winrate_evaluator is None:
+            raise ValueError(
+                "Evaluators not initialized. Call setup_evaluators() first."
+            )
+
+        # Get metrics from both evaluators
+        lm_judge_metrics = self.lm_judge_evaluator.compute_metrics(eval_data)
+        winrate_metrics = self.winrate_evaluator.compute_metrics(eval_data)
+
+        # Combine metrics
+        metrics = {"lm_judge": lm_judge_metrics, "winrate": winrate_metrics}
+
+        return metrics
+
+    @torch.no_grad()
+    def eval_accuracy(
+        self,
+        test_dataloader,
+        max_new_tokens: int = 100,
+        temperature: float = 0.7,
+        do_sample: bool = True,
+        max_steps: Optional[int] = None,
+    ) -> Dict[str, float]:
+        """
+        Generate completions with and without intervention, then evaluate using axbench metrics
+        """
+        from tqdm import tqdm
+
+        eval_data = []
+
+        for step, batch in enumerate(
+            tqdm(test_dataloader, desc="Generating completions")
+        ):
+            if max_steps and step >= max_steps:
+                logger.debug(f"\nStopping early at {max_steps} steps")
+                break
+
+            try:
+                # Generate with intervention
+                outputs_with_intervention = self.interpretor.generate(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    base_input_ids=batch.get("base_input_ids"),
+                    base_attention_mask=batch.get("base_attention_mask"),
+                    base_intervention_mask=batch.get("base_intervention_mask"),
+                    base_position_ids=batch.get("base_position_ids"),
+                    intervention_layers=batch.get("intervention_layers"),
+                    intervention_positions=batch.get("intervention_positions"),
+                    max_new_tokens=max_new_tokens,
+                    do_sample=do_sample,
+                    temperature=temperature,
+                    do_intervention=True,
+                )
+
+                # Generate without intervention (baseline)
+                outputs_no_intervention = self.interpretor.generate(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    base_input_ids=batch.get("base_input_ids"),
+                    base_attention_mask=batch.get("base_attention_mask"),
+                    base_intervention_mask=batch.get("base_intervention_mask"),
+                    base_position_ids=batch.get("base_position_ids"),
+                    intervention_layers=batch.get("intervention_layers"),
+                    intervention_positions=batch.get("intervention_positions"),
+                    max_new_tokens=max_new_tokens,
+                    do_sample=do_sample,
+                    temperature=temperature,
+                    do_intervention=False,  # Baseline without intervention
+                )
+
+                # Convert outputs to text
+                intervention_texts = self.target_model.tokenizer.batch_decode(
+                    outputs_with_intervention, skip_special_tokens=True
+                )
+                baseline_texts = self.target_model.tokenizer.batch_decode(
+                    outputs_no_intervention, skip_special_tokens=True
+                )
+                original_prompts = self.target_model.tokenizer.batch_decode(
+                    batch["input_ids"], skip_special_tokens=True
+                )
+
+                for i in range(len(intervention_texts)):
+                    eval_data.append(
+                        {
+                            "input_concept": batch.get(
+                                "concept_id", ["default"] * len(intervention_texts)
+                            )[i],
+                            "original_prompt": original_prompts[i],
+                            f"{self.config.name_or_path}_steered_generation": intervention_texts[
+                                i
+                            ],
+                            "PromptSteering_steered_generation": baseline_texts[i],
+                            "factor": "hyperreft_steered",  # This example used intervention
+                        }
+                    )
+
+                    # Entry for baseline condition
+                    eval_data.append(
+                        {
+                            "input_concept": batch.get(
+                                "concept_id", ["default"] * len(intervention_texts)
+                            )[i],
+                            "original_prompt": original_prompts[i],
+                            f"{self.config.name_or_path}_steered_generation": intervention_texts[
+                                i
+                            ],
+                            "PromptSteering_steered_generation": baseline_texts[i],
+                            "factor": "baseline",  # This example used no intervention
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(f"Error processing batch {step}: {str(e)}")
+                continue
+
+        if not eval_data:
+            raise ValueError("No successful evaluations completed")
+
+        eval_df = pd.DataFrame(eval_data)
+
+        logger.info(f"\nCompleted generation for {len(eval_data)} examples")
+
+        # Run evaluation
+        metrics = self.evaluate_axbench(eval_df)
+
+        if wandb.run:
+            # Log raw evaluation data
+            wandb.log(
+                {
+                    "steering/generations": wandb.Table(dataframe=eval_df),
+                    "steering/winrate": wandb.Table(
+                        dataframe=eval_df[eval_df["factor"] == "intervention"]
+                    ),
+                }
+            )
+
+            # Log metrics
+            concepts = []
+            for concept_id in eval_df["input_concept"].unique():
+                concept_data = eval_df[eval_df["input_concept"] == concept_id].iloc[0]
+                concepts.append(
+                    [
+                        concept_id,  # concept_id
+                        concept_data["input_concept"],  # concept
+                        metrics["winrate"]
+                        .get(concept_id, {})
+                        .get("win_rate"),  # winrate
+                        None,  # auc (not applicable)
+                        None,  # max_act (not applicable)
+                        concept_data["factor"],  # best_factor
+                        None,  # sae_link (not applicable)
+                    ]
+                )
+
+            wandb.log(
+                {
+                    "concept_table": wandb.Table(
+                        columns=[
+                            "concept_id",
+                            "concept",
+                            "winrate",
+                            "auc",
+                            "max_act",
+                            "best_factor",
+                            "sae_link",
+                        ],
+                        data=concepts,
+                    )
+                }
+            )
+
+            # Log LMJudge metrics
+            if "lm_judge" in metrics:
+                wandb.log(
+                    {
+                        "lm_judge/concept_relevance": metrics["lm_judge"][
+                            "relevance_concept_ratings"
+                        ],
+                        "lm_judge/instruction_relevance": metrics["lm_judge"][
+                            "relevance_instruction_ratings"
+                        ],
+                        "lm_judge/fluency": metrics["lm_judge"]["fluency_ratings"],
+                        "lm_judge/aggregated": metrics["lm_judge"]["lm_judge_rating"],
+                    }
+                )
+
+        return metrics
+
+    def run_train(
+        self,
+        train_loader,
+        test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
+    ):
+        epochs = self.config.training.n_epochs
+        steps = self.config.training.n_steps
+        eval_per_steps = self.config.training.eval_per_steps
+        checkpoint_per_steps = self.config.training.checkpoint_per_steps
+        save_dir = self.config.training.save_dir
+        save_model = self.config.training.save_model
+        run_name = self.config.wandb_config.run_name
+        lr = self.config.training.lr
+        weight_decay = self.config.training.weight_decay
+        max_grad_norm = self.config.training.max_grad_norm
+
+        os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
+        OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
+
+        trainable_parameters = []
+        for name, param in self.named_parameters():
+            if "target_model" not in name:
+                if "das_module" in name:
+                    if "rotate_layer" in name:
+                        trainable_parameters += [
+                            {"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}
+                        ]
+                    elif "mask_projection" in name:
+                        trainable_parameters += [
+                            {"params": param, "lr": self.boundary_lr}
+                        ]
+                    else:
+                        trainable_parameters += [{"params": param}]
+                else:
+                    trainable_parameters += [{"params": param}]
+
+        self.opt = optim.AdamW(
+            trainable_parameters, lr=lr, weight_decay=weight_decay
+        )  # usually: lr = 5e-5. 1e-3 worked well!
+
+        # We can either specify total steps or epochs
+        total_steps = len(train_loader) * epochs if steps <= 0 else steps
+        if steps > 0:
+            epochs = ceil(total_steps / len(train_loader))
+        cur_steps = 0
+
+        for epoch in range(epochs):
+            # Create a tqdm progress bar
+            with tqdm(
+                total=len(train_loader),
+                desc=f"Epoch {epoch + 1}/{epochs}",
+                unit="batch",
+                disable=True,
+            ) as pbar:
+                num_datapoints_in_epoch = 0
+                epoch_train_loss = 0
+                # Train loop
+                for batch in train_loader:
+                    if cur_steps >= total_steps:
+                        logger.info("Training stopped. Reached max steps.")
+                        break
+                    if eval_per_steps is not None:
+                        if cur_steps % eval_per_steps == 0:
+                            # TODO: Evaluate the model
+                            pass
+
+                    if checkpoint_per_steps is not None:
+                        if (
+                            cur_steps % checkpoint_per_steps == 0
+                            and save_dir is not None
+                            and save_model
+                        ):
+                            logger.info(
+                                "Saving model to {}".format(
+                                    os.path.join(
+                                        save_dir,
+                                        run_name,
+                                        f"model_epoch_{epoch}_step_{cur_steps}",
+                                    )
+                                )
+                            )
+                            self.save_model(
+                                os.path.join(
+                                    save_dir,
+                                    run_name,
+                                    f"model_epoch_{epoch}_step_{cur_steps}",
+                                )
+                            )
+
+                    self.batch = batch
+                    current_batch_size = len(batch["editor_input_ids"])
+                    num_datapoints_in_epoch += current_batch_size
+
+                    # Move all batch items to device
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
+
+                    prediction = self.forward(
+                        editor_input_ids=batch["editor_input_ids"],
+                        base_input_ids=batch["base_input_ids"],
+                        base_attention_mask=batch["base_attention_mask"],
+                        base_intervention_mask=batch["base_intervention_mask"],
+                        labels=batch["labels"],
+                        is_causal=batch["is_causal"],
+                    )
+
+                    training_loss = 0
+
+                    prediction_loss = prediction["loss"]
+                    training_loss += prediction_loss
+
+                    training_loss.backward()
+                    grad_norm = nn.utils.clip_grad_norm_(
+                        self.parameters(), max_grad_norm
+                    )
+
+                    # Log more gradient norms
+                    if hasattr(self.interpretor.das_module, "gradient_norms"):
+                        grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+                    else:
+                        grad_norm_metrics = {}
+
+                    self.opt.step()
+                    # metrics
+                    epoch_train_loss += training_loss.item() * current_batch_size
+                    self.opt.zero_grad()
+
+                    metrics = {
+                        "counters/step": cur_steps,
+                        "counters/epoch": cur_steps / len(train_loader),
+                        "train_batch_prediction_loss": prediction_loss.item(),
+                        "grad_norm": grad_norm.item(),
+                        **prediction.metrics,
+                        **grad_norm_metrics,
+                    }
+
+                    if wandb.run:
+                        wandb.log(metrics)
+                    if cur_steps % 5 == 0:
+                        output_metrics = {**metrics}
+
+                        logger.info(output_metrics)
+
+                    # Update progress bar
+                    pbar.update(1)  # note: this was incorrectly displaying before!
+                    cur_steps += 1
+
+                if wandb.run:
+                    wandb.log(
+                        {
+                            "epoch_train_total_loss": epoch_train_loss
+                            / num_datapoints_in_epoch,
+                        }
+                    )
+
+        result_dict = {}
 
         # Save the final model
         if save_model and save_dir:

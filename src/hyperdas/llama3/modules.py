@@ -1,23 +1,41 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
-from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union, Literal
+from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
+
 import torch
 import torch.nn as nn
 from transformers import (
     AutoModelForCausalLM,
-    LlamaConfig,
-    LlamaModel,
-    LlamaForCausalLM,
     AutoTokenizer,
+    LlamaConfig,
+    LlamaForCausalLM,
+    LlamaModel,
 )
-
-
-from transformers.cache_utils import StaticCache, DynamicCache, Cache
+from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
 )
+from transformers.utils import ModelOutput
 
+
+from logger import get_logger
+
+from ..das_utils import (
+    BoundlessRotatedSpaceIntervention,
+    InterventionModuleOutput,
+    LowRankRotatedSpaceIntervention,
+    QuasiProjectiveIntervention,
+    ReflectiveLowRankRotatedSpaceIntervention,
+    SelectiveLowRankRotatedSpaceIntervention,
+)
+from ..reft_utils import (
+    LoreftIntervention,
+    ReFTHypernetwork,
+    SelectiveLoreftIntervention,
+    SteeringVecLoreftIntervention,
+)
 from ..utils import (
     InterpretorModelOutput,
     InterpretorModelOutputWithLearnedSource,
@@ -29,27 +47,11 @@ from .layers import (
     LlamaDecoderLayerWithDoubleCrossAttention,
 )
 
-from ..reft_utils import (
-    LoreftIntervention,
-    ReFTHypernetwork,
-    SelectiveLoreftIntervention,
-    SteeringVecLoreftIntervention,
-)
-from ..das_utils import (
-    InterventionModuleOutput,
-    LowRankRotatedSpaceIntervention,
-    BoundlessRotatedSpaceIntervention,
-    SelectiveLowRankRotatedSpaceIntervention,
-    ReflectiveLowRankRotatedSpaceIntervention,
-    QuasiProjectiveIntervention,
-)
-
-from dataclasses import dataclass
-
-
 T_Learned = TypeVar("T_Learned", bound="LlamaInterpretorWithLearnedSource")
 T_Regular = TypeVar("T_Regular", bound="LlamaInterpretor")
 T_Reft = TypeVar("T_Reft", bound="LlamaInterpretorForReFTGeneration")
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -557,6 +559,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         else:"""
 
         self.layerwise_embeddings = None
+        self.original_layer_forward = {}
+
+        self._cache = {}
 
     def train(self: T_Reft, mode: bool = True) -> T_Reft:
         return self.hypernetwork.train(mode)
@@ -594,6 +599,88 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             )
 
         return outputs.hidden_states
+
+    def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
+        do_intervention = kwargs.pop("do_intervention", True)
+        if do_intervention:
+            try:
+                self.prepare_for_generation()
+                outputs = self.target_model.generate(*args, **kwargs)
+            finally:
+                self.cleanup_after_generation()
+        else:
+            outputs = self.target_model.generate(*args, **kwargs)
+        return outputs
+
+    def _create_intervention_hook(self, layer_idx):
+        def intervention_forward(*args, **kwargs):
+            outputs = self.original_layer_forward[layer_idx](*args, **kwargs)
+
+            # Only apply intervention during prefill phase
+            if kwargs.get("past_key_value") is None:  # prefill mode
+                hidden_states = outputs[0]
+                self._cache["current_layer"] = layer_idx
+                modified_states, _ = self._apply_intervention(
+                    hidden_states,
+                    hypernet_hidden_states=self._cache["hypernet_hidden_states"],
+                )
+                outputs = (modified_states,) + outputs[1:]
+
+            return outputs
+
+        return intervention_forward
+
+    def prepare_for_generation(self):
+        """Setup hooks for generation"""
+        self.intervention_hooks = []
+        for layer_idx, layer in enumerate(self.target_model.model.layers):
+            if layer_idx in self.config.model.intervention_layers:
+                hook = layer.register_forward_hook(
+                    self._create_intervention_hook(layer_idx)
+                )
+                self.intervention_hooks.append(hook)
+
+    def cleanup_after_generation(self):
+        """Remove hooks after generation"""
+        for hook in self.intervention_hooks:
+            hook.remove()
+        self.intervention_hooks = []
+
+    def _apply_intervention(
+        self, hidden_states, hypernet_hidden_states=None, metrics=None
+    ):
+        """Common intervention logic used by both forward and generation"""
+        if not hasattr(self, "das_module"):
+            raise ValueError("DAS module not initialized")
+
+        current_layer = self._cache["current_layer"]
+
+        if hypernet_hidden_states is None:
+            # During generation, we'll reuse the cached hypernet states
+            hypernet_hidden_states = self._cache["hypernet_hidden_states"]
+            rotation_matrix = self._cache["rotation_matrix"][:, current_layer]
+            weight_matrix = self._cache["weight_matrix"][:, current_layer]
+        else:
+            # run hypernetwork to generate ReFT weights
+            # each of shape (B, L, P, H, R)
+            rotation_matrix, weight_matrix = self.reft_generator(
+                hypernet_hidden_states,
+                self._cache["intervention_layers"],
+                self._cache["intervention_positions"],
+            )
+            rotation_matrix = rotation_matrix[:, current_layer]
+            weight_matrix = weight_matrix[:, current_layer]
+
+        # Set the batch parameters for the DAS module
+        self.das_module.set_batch_parameters(rotation_matrix, weight_matrix)
+
+        # Apply intervention
+        intervention_output = self.das_module(
+            hidden_states, hidden_states=hypernet_hidden_states
+        )
+        mixed_output = intervention_output.mixed_output
+        metrics = intervention_output.metrics
+        return mixed_output, metrics
 
     def forward(
         self,
@@ -710,10 +797,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             rotation_matrix, weight_matrix = self.reft_generator(
                 hypernet_hidden_states, intervention_layers, intervention_positions
             )
-        else:
-            rotation_matrix, weight_matrix = None, None
+            self._cache["rotation_matrix"] = rotation_matrix
+            self._cache["weight_matrix"] = weight_matrix
 
-        # print(source_intervention[0])
         metrics = {}
 
         # Run target model with edit vectors.
@@ -723,17 +809,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
             nonlocal metrics
 
-            layer_rotation_matrix = rotation_matrix[:, current_layer]
-            layer_weight_matrix = weight_matrix[:, current_layer]
-            self.das_module.set_batch_parameters(
-                layer_rotation_matrix, layer_weight_matrix
+            mixed_output, metrics = self._apply_intervention(
+                base_hidden_states, hypernet_hidden_states=hypernet_hidden_states
             )
-
-            intervention_output = self.das_module(
-                base_hidden_states, hidden_states=hypernet_hidden_states
-            )
-            mixed_output = intervention_output.mixed_output
-            metrics = intervention_output.metrics
             output[0][:] += mixed_output
 
         # Now editing the target model
@@ -762,7 +840,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         logits = target_result.logits
 
-        output = InterpretorModelOutputWithLearnedSource(
+        output = InterpretorModelOutput(
             logits=logits,
             base_intervention_weight=base_intervention_weight,
             target_hidden_states=target_result.hidden_states,
