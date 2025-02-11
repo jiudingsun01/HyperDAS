@@ -10,6 +10,7 @@ nlprun_fast.py
 ./data/
 *.pdf
 *.out
+*.log
 
 scripts/
 multirun

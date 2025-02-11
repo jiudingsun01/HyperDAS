@@ -3,10 +3,10 @@ import os
 from abc import ABC, abstractmethod
 from math import ceil
 from typing import Dict, List, Optional
-import pandas as pd
 
 import httpx
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -17,10 +17,11 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
 
 import wandb
-from axbench.axbench.evaluators.lm_judge import LMJudgeEvaluator
-from axbench.axbench.evaluators.winrate import WinRateEvaluator
-from axbench.axbench.models.language_models import LanguageModel
+from axbench.evaluators.lm_judge import LMJudgeEvaluator
+from axbench.evaluators.winrate import WinRateEvaluator
+from axbench.models.language_models import LanguageModel
 from logger import get_logger
+from src.hyperdas.data.axbench import parse_positions
 
 from ..das_utils import QuasiProjectiveIntervention
 from ..utils import InterpretorModelOutput, NamedDataLoader
@@ -886,6 +887,17 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
     def __init__(self, config: DictConfig, device):
         super().__init__(config, device)
 
+        self.interpretor_config.num_target_layers = len(
+            config.model.intervention_layer
+            if isinstance(config.model.intervention_layer, list)
+            else [config.model.intervention_layer]
+        )
+        self.interpretor_config.num_target_positions = len(
+            parse_positions(config.model.intervention_positions)
+        )
+        self.interpretor_config.target_hidden_size = config.model.target_hidden_size
+        self.rotate_lr = config.training.get("rotate_lr", 1e-3)
+
         # Initialize model components
         interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
         if interpretor_cls is None:
@@ -907,12 +919,12 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         base_input_ids: Optional[torch.LongTensor] = None,
         base_attention_mask: Optional[torch.FloatTensor] = None,
         base_intervention_mask: Optional[torch.FloatTensor] = None,
+        intervention_layers: Optional[torch.Tensor] = None,
+        intervention_positions: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        output_intervention_weight: bool = True,
         is_causal: Optional[torch.BoolTensor] = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
-        base_intervention_weight: Optional[torch.FloatTensor] = None,
     ) -> InterpretorModelOutput:
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
@@ -921,8 +933,8 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
-            output_intervention_weight=output_intervention_weight,
-            base_intervention_weight=base_intervention_weight,
+            intervention_layers=intervention_layers,
+            intervention_positions=intervention_positions,
         )
 
         if labels is not None:
@@ -1299,13 +1311,18 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     num_datapoints_in_epoch += current_batch_size
 
                     # Move all batch items to device
-                    batch = {k: v.to(self.device) for k, v in batch.items()}
+                    batch = {
+                        k: (v.to(self.device) if isinstance(v, torch.Tensor) else v)
+                        for k, v in batch.items()
+                    }
 
                     prediction = self.forward(
                         editor_input_ids=batch["editor_input_ids"],
                         base_input_ids=batch["base_input_ids"],
                         base_attention_mask=batch["base_attention_mask"],
                         base_intervention_mask=batch["base_intervention_mask"],
+                        intervention_layers=batch["intervention_layers"],
+                        intervention_positions=batch["intervention_positions"],
                         labels=batch["labels"],
                         is_causal=batch["is_causal"],
                     )

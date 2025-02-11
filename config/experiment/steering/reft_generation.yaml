@@ -6,16 +6,6 @@ defaults:
   - /wandb_config/base
   - _self_
 
-# Move all configurations under their respective groups
-model:
-  subspace_module: "LoReFT"
-  das_dimension: 32
-  num_editing_heads: 32
-  num_decoders: 8
-  intervention_layer: 15
-  intervention_layers: [2, 4, 6, 8]
-  intervention_positions: "f7+l7"
-
 training:
   n_epochs: 1
   n_steps: 500

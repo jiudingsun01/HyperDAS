@@ -20,8 +20,8 @@ pycryptodomex
 python-dotenv
 pyvene
 pyyaml
-ray[default]; python_version < "3.12"
-hydra-ray-jobs-launcher; python_version < "3.12"
+ray[default]
+hydra-ray-jobs-launcher
 scikit-learn
 seaborn
 tiktoken

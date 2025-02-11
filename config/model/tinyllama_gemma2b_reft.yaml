@@ -2,12 +2,16 @@ defaults:
   - base
   - _self_
 
+subspace_module: "LoReFT"
 name_or_path: "TinyLlama/TinyLlama_v1.1"
 target_model_name_or_path: "google/gemma-2b"
 das_dimension: 32
 num_editing_heads: 32
 num_decoders: 8
-chop_editor_at_layer: 15  # Make sure it's also here
-intepretor_type: "reft"
-intervention_layers: [2, 4, 6, 8]
+chop_editor_at_layer: 15 # Make sure it's also here
+target_hidden_size: 2048
+intervention_layer: [2, 4, 6, 8]
 intervention_positions: "f7+l7"
+
+hypernetwork_type: "steering"
+intepretor_type: "reft"

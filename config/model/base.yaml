@@ -23,6 +23,6 @@ break_asymmetric: false
 importance_power: -2
 epsilon: 1e-6
 hat_matrix: false
+
 intepretor_type: "regular"
-num_target_layers: null
-num_target_positions: null
+hypernetwork_type: "disentangle"

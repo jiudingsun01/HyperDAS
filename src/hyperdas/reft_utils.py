@@ -26,6 +26,7 @@ class ReFTHypernetwork(nn.Module):
         rank: int,
         rms_norm_eps: float = 1e-6,
         dropout: float = 0.05,
+        dtype: torch.dtype = torch.bfloat16,
     ) -> None:
         """
         ReFT Hypernetwork that generates weight and rotation matrices for target model intervention.
@@ -41,32 +42,39 @@ class ReFTHypernetwork(nn.Module):
             dropout: Dropout probability (default: 0.05)
         """
         super().__init__()
+        self.dtype = dtype
         self.embed_dim = hidden_size
         self.target_embed_dim = target_hidden_size
         self.num_target_layers = num_target_layers
         self.rank = rank
         self.task_encoder = nn.Sequential(
-            nn.Embedding(hidden_size, hidden_size // 2),
-            nn.LayerNorm(hidden_size // 2, eps=rms_norm_eps),
+            nn.Linear(hidden_size, hidden_size // 2, dtype=dtype),
+            nn.LayerNorm(hidden_size // 2, eps=rms_norm_eps, dtype=dtype),
         )
+        # TODO(sid): add support for padding to position encoder to allow mixing in batch
         self.position_encoder = nn.Sequential(
-            nn.Embedding(num_target_positions, hidden_size // 4),
-            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps),
+            nn.Embedding(num_target_positions, hidden_size // 4, dtype=dtype),
+            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps, dtype=dtype),
         )
+        # TODO(sid): do embeddings need to be in float32 or bf16 and we cast? Not sure what the convention is
         self.layer_encoder = nn.Sequential(
-            nn.Embedding(num_target_layers, hidden_size // 4),
-            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps),
+            nn.Embedding(num_target_layers, hidden_size // 4, dtype=dtype),
+            nn.LayerNorm(hidden_size // 4, eps=rms_norm_eps, dtype=dtype),
         )
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_size, intermediate_size),
+            nn.Linear(hidden_size, intermediate_size, dtype=dtype),
             nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(intermediate_size, hidden_size),
+            nn.Linear(intermediate_size, hidden_size, dtype=dtype),
             nn.SiLU(),
             nn.Dropout(dropout),
         )
-        self.weight_head = nn.Linear(hidden_size, target_hidden_size * rank)
-        self.rotate_head = nn.Linear(hidden_size, target_hidden_size * rank)
+        self.weight_head = nn.Linear(
+            hidden_size, target_hidden_size * rank, dtype=dtype
+        )
+        self.rotate_head = nn.Linear(
+            hidden_size, target_hidden_size * rank, dtype=dtype
+        )
 
     def forward(
         self,
@@ -76,23 +84,26 @@ class ReFTHypernetwork(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            task_encoding: Tensor of shape (batch_size, hidden_size) containing task embeddings
+            task_encoding: Tensor of shape (batch_size, reft_target_layers, hidden_size) containing task embeddings
             layer_indices: LongTensor of shape (batch_size,) containing target layer indices
             position_indices: LongTensor of shape (batch_size,) containing position indices
 
         Returns:
             Tuple of (weight_matrix, rotation_matrix) of shape (batch_size, target_hidden_size, num_target_layers)
         """
-        _, n_layers = layer_indices.shape
+        n_layers = layer_indices.shape[0]
         _, n_positions = position_indices.shape
-        # (B, 1, H // 2)
-        task_encoding = self.task_encoder(task_encoding).unsqueeze(1)
+        # (B, L, H // 2)
+        task_encoding = self.task_encoder(task_encoding)
         # (B, P, H // 4)
         pos_emb = self.position_encoder(position_indices)
-        # (B, L, H // 4)
+        # (B, 1, H // 4)
         layer_emb = self.layer_encoder(layer_indices)
 
         # Expand shapes to match
+
+        breakpoint()
+
         task_encoding = task_encoding.expand(-1, n_layers, -1)
         pos_emb = pos_emb.unsqueeze(1).expand(-1, n_layers, -1, -1)
         layer_emb = layer_emb.unsqueeze(2)  # (B, L, 1, H//4)
@@ -167,16 +178,16 @@ class LoreftIntervention(
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs, keep_last_dim=True)
-        self.embed_dim = kwargs["embed_dim"]
+        self.hidden_dim = kwargs["embed_dim"]
         self.low_rank_dimension = kwargs["low_rank_dimension"]
 
         # Initialize with default weights that can be overridden per batch
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, self.low_rank_dimension, init_orth=True
+            self.hidden_dim, self.low_rank_dimension, init_orth=True
         )
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.learned_source = torch.nn.Linear(
-            self.embed_dim, self.low_rank_dimension
+            self.hidden_dim, self.low_rank_dimension
         ).to(kwargs["dtype"] if "dtype" in kwargs else torch.bfloat16)
 
         self.dropout = torch.nn.Dropout(
@@ -236,8 +247,6 @@ class LoreftIntervention(
                 mixed_states,
                 base,
             )
-
-            mixed_output = self.dropout(mixed_output.to(base.dtype))
         else:
             # Fallback to global parameters
             rotated_base = self.rotate_layer(base)
@@ -270,7 +279,7 @@ class LoreftIntervention(
         overload_w = state_dict["rotate_layer"].to(self.learned_source.weight.device)
         overload_w_width = overload_w.shape[-1]
         rotate_layer = LowRankRotateLayer(
-            self.embed_dim, overload_w_width, init_orth=True
+            self.hidden_dim, overload_w_width, init_orth=True
         ).to(self.learned_source.weight.device)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.rotate_layer.parametrizations.weight[0].base[:, :overload_w_width] = (

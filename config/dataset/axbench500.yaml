@@ -2,7 +2,7 @@ defaults:
   - base
   - _self_ # Ensure dataset-specific configs override base
 
-train_path: "pyvene/axbench-concept16k"
+train_path: "pyvene/axbench-concept500"
 test_path: ""
 dataset_type: axbench
 axbench_mode: steering

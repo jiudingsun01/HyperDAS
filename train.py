@@ -6,8 +6,7 @@ from datetime import datetime
 import hydra
 import omegaconf
 import torch
-import wandb
-from datasets import load_from_disk
+from datasets import DatasetDict, load_dataset, load_from_disk
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
@@ -15,13 +14,22 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from hyperdas.data.axbench import split_axbench16k_train_test
+import wandb
 from logger import get_logger
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
-from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+from src.hyperdas.data.axbench import split_axbench16k_train_test_fast
+from src.hyperdas.llama3.model import (
+    RavelInterpretorHypernetwork,
+    SteeringInterpretorHypernetwork,
+)
 from src.hyperdas.utils import NamedDataLoader
 
 logger = get_logger(__name__)
+
+HYPERNETWORK_CLS = {
+    "disentangle": RavelInterpretorHypernetwork,
+    "steering": SteeringInterpretorHypernetwork,
+}
 
 
 def run_experiment(
@@ -63,13 +71,30 @@ def run_experiment(
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    train_set = load_from_disk(config.dataset.train_path)
+    # TODO(sid) refactor this into a data loading function
+    def load_wrapper(path, split="train"):
+        try:
+            if os.path.exists(path):
+                dataset = load_from_disk(path)
+            else:
+                dataset = load_dataset(path)
+
+            # Extract train split if it exists
+            if isinstance(dataset, DatasetDict) and split in dataset:
+                return dataset[split]
+            return dataset
+
+        except Exception as e:
+            logger.error(f"Error loading dataset: {str(e)}")
+            raise e
+
+    train_set = load_wrapper(config.dataset.train_path, split="train")
 
     if not config.dataset.test_path:
         if config.dataset.dataset_type != "axbench":
             raise ValueError("Test path is required for dataset type")
         logger.debug("Splitting axbench train set into train and test sets")
-        train_set, test_set = split_axbench16k_train_test(
+        train_set, test_set = split_axbench16k_train_test_fast(
             train_set,
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
@@ -77,15 +102,17 @@ def run_experiment(
     else:
         # Load multiple test sets
         if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
-            test_set = [load_from_disk(path) for path in config.dataset.test_path]
+            test_set = [
+                load_wrapper(path, split="test") for path in config.dataset.test_path
+            ]
         else:
-            test_set = load_from_disk(config.dataset.test_path)
+            test_set = load_wrapper(config.dataset.test_path, split="test")
 
     if config.dataset.dataset_type == "axbench":
         collate_fn = get_axbench_collate_fn(
             tokenizer,
             mode=config.dataset.axbench_mode,
-            intervention_layers=config.model.intervention_layers,
+            intervention_layers=config.model.intervention_layer,
             intervention_positions=config.model.intervention_positions,
         )
     elif config.dataset.dataset_type == "ravel":
@@ -144,7 +171,8 @@ def run_experiment(
             )
         ]
 
-    hypernetwork = RavelInterpretorHypernetwork(config, device)
+    # TODO(sid): refactor these into a proper registry system
+    hypernetwork = HYPERNETWORK_CLS[config.model.hypernetwork_type](config, device)
 
     if config.training.load_trained_from is not None:
         logger.info(f"Loading model from {config.training.load_trained_from}")

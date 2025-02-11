@@ -1,5 +1,7 @@
+import os
 import torch
 import random
+import datasets
 
 
 def split_axbench16k_train_test(axbench_train_set, split_by="concept", train_ratio=0.8):
@@ -30,7 +32,83 @@ def split_axbench16k_train_test(axbench_train_set, split_by="concept", train_rat
     return train_set, test_set
 
 
+def split_axbench16k_train_test_fast(
+    dataset: datasets.Dataset,
+    split_by="concept",
+    train_ratio=0.8,
+    seed=42,
+    num_proc=None,
+    cache_dir="assets/data/axbench",
+):
+    """Split an axbench dataset into train and test sets using HF Dataset operations.
+
+    Args:
+        dataset: HuggingFace Dataset object containing axbench data
+        split_by: How to split the dataset - "concept", "random", or "example"
+        train_ratio: Fraction of data to use for training
+        seed: Random seed for reproducibility
+        num_proc: Number of processes to use for parallel processing
+        cache_dir: Directory to cache the processed datasets. If None, uses default HF cache
+    """
+    # Create a unique cache key based on the parameters
+    cache_key = f"split_{split_by}_ratio{train_ratio}_seed{seed}"
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Try to load from cache first
+    if cache_dir:
+        try:
+            train_dataset = datasets.load_from_disk(f"{cache_dir}/train_{cache_key}")
+            test_dataset = datasets.load_from_disk(f"{cache_dir}/test_{cache_key}")
+            return train_dataset, test_dataset
+        except Exception:
+            pass  # If loading fails, proceed with computing the split
+
+    # Filter for positive examples using multiprocessing
+    dataset = dataset.filter(lambda x: x["category"] == "positive", num_proc=num_proc)
+
+    if split_by == "concept":
+        # Get unique concept IDs using multiprocessing
+        concept_ids = dataset.unique("concept_id")
+
+        # Select train concepts
+        random.seed(seed)
+        train_concept_ids = set(
+            random.sample(concept_ids, int(len(concept_ids) * train_ratio))
+        )
+
+        # Create filter functions
+        def is_train(x):
+            return x["concept_id"] in train_concept_ids
+
+        def is_test(x):
+            return x["concept_id"] not in train_concept_ids
+
+        # Split based on concepts using multiprocessing
+        train_dataset = dataset.filter(is_train, num_proc=num_proc)
+        test_dataset = dataset.filter(is_test, num_proc=num_proc)
+
+    elif split_by == "example":
+        raise NotImplementedError("Example-based splitting not implemented")
+
+    elif split_by == "random":
+        # Shuffle and split
+        dataset = dataset.shuffle(seed=seed)
+        split_dict = dataset.train_test_split(
+            train_size=train_ratio,
+            seed=seed,
+        )
+        train_dataset = split_dict["train"]
+        test_dataset = split_dict["test"]
+
+    if cache_dir:
+        train_dataset.save_to_disk(f"{cache_dir}/train_{cache_key}")
+        test_dataset.save_to_disk(f"{cache_dir}/test_{cache_key}")
+
+    return train_dataset, test_dataset
+
+
 def tokenize_text_inputs(tokenizer, inputs, targets, add_space_before_target=True):
+    # TODO(sid): we should add padding to multiple of 8, for example, to improve training efficiency.
     if add_space_before_target:
         input_texts = []
         for ipt, targ in zip(inputs, targets):
@@ -141,10 +219,10 @@ def get_axbench_collate_fn(
 
         # create intervention layer and positions
         if mode == "steering":
-            intervention_pos = [
-                parse_positions(intervention_positions or "f7+l7") for _ in batch
-            ]
-            intervention_l = [intervention_layers or [7] for _ in batch]
+            pos = parse_positions(intervention_positions or "f7+l7")
+            intervention_pos = torch.tensor([pos for _ in batch])
+            # NOTE: this is non-batched for ease of use
+            intervention_l = torch.tensor(intervention_layers or [7])
             returned_dict["intervention_layers"] = intervention_l
             returned_dict["intervention_positions"] = intervention_pos
 

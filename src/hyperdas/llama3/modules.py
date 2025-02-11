@@ -12,6 +12,7 @@ from transformers import (
     LlamaConfig,
     LlamaForCausalLM,
     LlamaModel,
+    AutoConfig,
 )
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_outputs import (
@@ -141,7 +142,7 @@ class LlamaModelWithCrossAttention(LlamaModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
-    ) -> Union[Tuple]:
+    ) -> Union[Tuple[torch.Tensor, ...], BaseModelOutputWithPast]:
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -430,7 +431,7 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Union[Tuple]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
@@ -492,7 +493,11 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         super().__init__()
 
         self.config = config
+        target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
+        self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
+
         self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+
         self.reft_generator = ReFTHypernetwork(
             hidden_size=config.hidden_size,
             target_hidden_size=config.target_hidden_size,
@@ -502,7 +507,8 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             rank=config.das_dimension,
             rms_norm_eps=config.rms_norm_eps,
             dropout=config.attention_dropout,
-        )
+            dtype=config.torch_dtype,
+        ).to(device)
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
             torch_dtype=config.torch_dtype,
@@ -634,7 +640,12 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         """Setup hooks for generation"""
         self.intervention_hooks = []
         for layer_idx, layer in enumerate(self.target_model.model.layers):
-            if layer_idx in self.config.model.intervention_layers:
+            intervention_layers = (
+                [self.config.model.intervention_layer]
+                if isinstance(self.config.model.intervention_layer, int)
+                else self.config.model.intervention_layer
+            )
+            if layer_idx in intervention_layers:
                 hook = layer.register_forward_hook(
                     self._create_intervention_hook(layer_idx)
                 )
@@ -693,7 +704,6 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         base_position_ids: Optional[torch.Tensor] = None,
         intervention_layers: Optional[List[int]] = None,
         intervention_positions: Optional[torch.LongTensor] = None,
-        base_intervention_weight: Optional[torch.Tensor] = None,
         run_weight_generation: bool = True,
         **kwargs,
     ) -> InterpretorModelOutput:
@@ -711,13 +721,21 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         if isinstance(intervention_layers, int):
             intervention_layers = (
-                torch.LongTensor([intervention_layers])
+                torch.tensor(
+                    [intervention_layers],
+                    dtype=torch.long,
+                    device=editor_input_ids.device,
+                )
                 .unsqueeze(0)
                 .expand(editor_input_ids.shape[0], -1)
             )
         elif isinstance(intervention_layers, list):
             intervention_layers = (
-                torch.LongTensor(intervention_layers)
+                torch.tensor(
+                    intervention_layers,
+                    dtype=torch.long,
+                    device=editor_input_ids.device,
+                )
                 .unsqueeze(0)
                 .expand(editor_input_ids.shape[0], -1)
             )
@@ -763,6 +781,10 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         n_layer = base_hidden_states.shape[2]
 
+        base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
+
+        n_layer = base_hidden_states.shape[2]
+
         collapsed_base_hidden_states = base_hidden_states.reshape(
             base_hidden_states.shape[0],
             base_hidden_states.shape[1] * base_hidden_states.shape[2],
@@ -780,16 +802,24 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
         editor_input_ids = None
 
-        interpretor_output = self.hypernetwork(
-            input_ids=editor_input_ids,
-            inputs_embeds=inputs_embeds,
-            attention_mask=editor_attention_mask,
-            base_encoder_hidden_states=collapsed_base_hidden_states,
-            base_encoder_attention_mask=collapsed_base_attention_mask,
-            use_cache=False,
-        )
+        layer_hidden_states = []
+        for layer_idx in intervention_layers.tolist():
+            # Patch intervention layer each time
+            self.hypernetwork.lm_head.intervention_layer = layer_idx
+            interpretor_output = self.hypernetwork(
+                input_ids=editor_input_ids,
+                inputs_embeds=inputs_embeds,
+                attention_mask=editor_attention_mask,
+                base_encoder_hidden_states=collapsed_base_hidden_states,
+                base_encoder_attention_mask=collapsed_base_attention_mask,
+                use_cache=False,
+            )
 
-        hypernet_hidden_states = interpretor_output[0]
+            hypernet_hidden_states = interpretor_output[0]
+            layer_hidden_states.append(hypernet_hidden_states)
+
+        # Stack along layer axis -> (B, L, P, H)
+        hypernet_hidden_states = torch.stack(layer_hidden_states, dim=1)
 
         if run_weight_generation and hasattr(self.das_module, "set_batch_parameters"):
             # run hypernetwork to generate ReFT weights
@@ -842,7 +872,6 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         output = InterpretorModelOutput(
             logits=logits,
-            base_intervention_weight=base_intervention_weight,
             target_hidden_states=target_result.hidden_states,
         )
         output.metrics = metrics
@@ -862,6 +891,8 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
         super().__init__()
 
         self.config = config
+        target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
+        self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
         self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
@@ -1135,6 +1166,8 @@ class LlamaInterpretor(nn.Module):
 
         self.config = config
         self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+        target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
+        self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
             torch_dtype=config.torch_dtype,
