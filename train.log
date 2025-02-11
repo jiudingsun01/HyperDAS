@@ -8605,3 +8605,1398 @@ Traceback (most recent call last):
     if self.quitting: raise BdbQuit
                       ^^^^^^^^^^^^^
 bdb.BdbQuit
+[2025-02-11 07:51:14,174][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 07:51:14,174][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 07:51:14,175][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 07:51:14,175][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 07:51:14,240][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 07:51:14,247][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 07:51:15,977][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 07:52:21,632][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 107, in forward
+    task_encoding = task_encoding.expand(-1, n_layers, -1)
+                    ^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-11 07:54:29,514][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 07:54:29,514][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 07:54:29,514][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 07:54:29,514][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 07:54:29,577][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 07:54:29,587][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 07:54:30,951][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 07:55:08,821][__main__][ERROR] - An error occurred in hydra_main: expand(CUDABFloat16Type{[16, 4, 1, 15, 1024]}, size=[-1, -1, 2, -1]): the number of sizes provided (4) must be greater or equal to the number of dimensions in the tensor (5)
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 110, in forward
+    task_encoding.unsqueeze(2).expand(-1, -1, n_positions, -1),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: expand(CUDABFloat16Type{[16, 4, 1, 15, 1024]}, size=[-1, -1, 2, -1]): the number of sizes provided (4) must be greater or equal to the number of dimensions in the tensor (5)
+[2025-02-11 07:57:04,534][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 07:57:04,535][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 07:57:04,535][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 07:57:04,535][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 07:57:04,597][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 07:57:04,604][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 07:57:07,273][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:00:40,758][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    # each of shape (B, L, P, H, R)
+                                    
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 110, in forward
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-11 08:00:49,952][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:00:49,953][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:00:49,953][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:00:49,953][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:00:50,018][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:00:50,025][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:00:51,328][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:05:23,136][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 810, in forward
+    input_ids=editor_input_ids,
+                     ^^^^
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-11 08:06:00,860][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:06:00,860][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:06:00,860][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:06:00,861][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:06:00,918][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:06:00,928][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:06:02,395][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:10:43,476][__main__][ERROR] - An error occurred in hydra_main: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 112, in forward
+    repr = torch.cat(
+           ^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[2025-02-11 08:11:15,951][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:11:15,951][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:11:15,952][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:11:15,952][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:11:16,029][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:11:16,039][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:11:17,428][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:14:29,032][__main__][ERROR] - An error occurred in hydra_main: 
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 115, in forward
+    breakpoint()
+           ^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 90, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/bdb.py", line 115, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+[2025-02-11 08:16:43,983][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:16:43,983][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:16:43,983][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:16:43,983][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:16:44,047][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:16:44,057][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:16:45,311][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:17:23,189][__main__][ERROR] - An error occurred in hydra_main: The expanded size of the tensor (2) must match the existing size (4) at non-singleton dimension 2.  Target sizes: [-1, -1, 2, -1].  Tensor sizes: [16, 4, 1024]
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 108, in forward
+    task_encoding = task_encoding.expand(
+                    ^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: The expanded size of the tensor (2) must match the existing size (4) at non-singleton dimension 2.  Target sizes: [-1, -1, 2, -1].  Tensor sizes: [16, 4, 1024]
+[2025-02-11 08:18:10,843][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:18:10,843][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:18:10,843][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:18:10,844][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:18:10,907][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:18:10,914][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:18:12,138][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:18:50,566][__main__][ERROR] - An error occurred in hydra_main: "geqrf_cuda" not implemented for 'BFloat16'
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 827, in forward
+    rotation_matrix, weight_matrix = self.reft_generator(
+                                     ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/reft_utils.py", line 126, in forward
+    rotation_matrix, _ = torch.linalg.qr(rotation_matrix_unorth, mode="reduced")
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: "geqrf_cuda" not implemented for 'BFloat16'
+[2025-02-11 08:20:27,920][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:20:27,921][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:20:27,921][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:20:27,921][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:20:27,984][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:20:27,991][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:20:29,205][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:21:06,906][__main__][ERROR] - An error occurred in hydra_main: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 858, in forward
+    ].unique()  # take first batch since identical
+      ^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_tensor.py", line 1045, in unique
+    return torch.unique(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_jit_internal.py", line 624, in fn
+    return if_false(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/_jit_internal.py", line 624, in fn
+    return if_false(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/functional.py", line 1080, in _return_output
+    output, _, _ = _unique_impl(input, sorted, return_inverse, return_counts, dim)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/functional.py", line 973, in _unique_impl
+    output, inverse_indices, counts = torch._unique2(
+                                      ^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[2025-02-11 08:21:51,216][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:21:51,216][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:21:51,216][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:21:51,217][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:21:51,280][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:21:51,287][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:21:52,635][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:22:30,781][__main__][ERROR] - An error occurred in hydra_main: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 856, in forward
+    for layer_idx in intervention_layers.tolist()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[2025-02-11 08:25:42,914][__main__][INFO] - Working directory : /workspace/HyperDAS
+[2025-02-11 08:25:42,914][__main__][INFO] - Original working directory    : /workspace/HyperDAS
+[2025-02-11 08:25:42,914][__main__][INFO] - to_absolute_path('foo')       : /workspace/HyperDAS/foo
+[2025-02-11 08:25:42,915][__main__][INFO] - to_absolute_path('/foo')      : /foo
+[2025-02-11 08:25:42,978][__main__][INFO] - Running in parallel mode on device cuda:0
+[2025-02-11 08:25:42,985][__main__][INFO] - Config: model:
+  name_or_path: TinyLlama/TinyLlama_v1.1
+  target_model_name_or_path: google/gemma-2b
+  initialize_from_scratch: false
+  intervention_layer:
+  - 2
+  - 4
+  - 6
+  - 8
+  das_dimension: 32
+  num_editing_heads: 32
+  num_decoders: 8
+  subspace_module: LoReFT
+  dict_size: null
+  selection_mechanism: null
+  orthogonal_init: false
+  ridge_parameterization: null
+  scoring_dimension: 8
+  return_penalty: false
+  freeze_das_module: false
+  inference_modes:
+  - default
+  lambda_parameter: 0.001
+  ablate_base_token_attention: false
+  ablate_source_token_attention: false
+  break_asymmetric: false
+  importance_power: -2
+  epsilon: 1.0e-06
+  hat_matrix: false
+  intepretor_type: reft
+  hypernetwork_type: steering
+  chop_editor_at_layer: 15
+  target_hidden_size: 2048
+  intervention_positions: f7+l7
+dataset:
+  source_suffix_visibility: false
+  base_suffix_visibility: false
+  dataset_type: axbench
+  mode: localization
+  train_ratio: 0.8
+  train_path: pyvene/axbench-concept16k
+  test_path: ''
+  axbench_mode: steering
+  split_by: concept
+training:
+  n_epochs: 1
+  n_steps: 500
+  train_batch_size: 16
+  test_batch_size: 64
+  lr: 0.0001
+  eval_per_steps: 100
+  checkpoint_per_steps: null
+  max_eval_steps: -1
+  num_workers: 0
+  seed: 42
+  save_dir: assets/checkpoints
+  compute_metrics: true
+  debug_model: true
+  save_model: true
+  max_grad_norm: 4.0
+  weight_decay: 0.01
+  rotate_lr: 0.001
+  boundary_lr: 0.01
+  das_temperature_start: 50.0
+  das_temperature_end: 0.1
+  load_trained_from: null
+  target_intervention_num: null
+loss:
+  causal_loss_weight: 3.5
+  iso_loss_weight: 1.0
+  source_selection_sparsity_loss: false
+  target_intervention_num: null
+  sparsity:
+    apply: false
+    weight: 1.0
+  return_penalty: false
+wandb_config:
+  log: false
+  project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  run_name: ${oc.env:WANDB_RUN_NAME,null}
+  group: llama38b_gemma2b_hyperloreft_steer
+  tags: ${oc.env:WANDB_TAGS,null}
+  notes: ${oc.env:WANDB_NOTES,null}
+
+[2025-02-11 08:25:44,346][__main__][DEBUG] - Splitting axbench train set into train and test sets
+[2025-02-11 08:26:22,293][__main__][ERROR] - An error occurred in hydra_main: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+Traceback (most recent call last):
+  File "/workspace/HyperDAS/train.py", line 236, in main
+    run_experiment(cfg, device)
+  File "/workspace/HyperDAS/train.py", line 181, in run_experiment
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 1319, in run_train
+    prediction = self.forward(
+                 ^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/model.py", line 929, in forward
+    _pred: InterpretorModelOutput = self.interpretor(
+                                    ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/HyperDAS/src/hyperdas/llama3/modules.py", line 863, in forward
+    target_result = self.target_model(
+                    ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 1069, in forward
+    outputs = self.model(
+              ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 847, in forward
+    causal_mask = self._update_causal_mask(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/models/gemma/modeling_gemma.py", line 939, in _update_causal_mask
+    if AttentionMaskConverter._ignore_causal_mask_sdpa(
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/transformers/modeling_attn_mask_utils.py", line 284, in _ignore_causal_mask_sdpa
+    elif (is_training or not is_tracing) and torch.all(attention_mask == 1):
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: CUDA error: device-side assert triggered
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+

@@ -92,37 +92,38 @@ class ReFTHypernetwork(nn.Module):
             Tuple of (weight_matrix, rotation_matrix) of shape (batch_size, target_hidden_size, num_target_layers)
         """
         n_layers = layer_indices.shape[0]
-        _, n_positions = position_indices.shape
+        bsz, n_positions = position_indices.shape
         # (B, L, H // 2)
-        task_encoding = self.task_encoder(task_encoding)
+        task_encoding = self.task_encoder(task_encoding[:, :, -1, :])
         # (B, P, H // 4)
         pos_emb = self.position_encoder(position_indices)
-        # (B, 1, H // 4)
+        # (B, L, H // 4)
         layer_emb = self.layer_encoder(layer_indices)
 
         # Expand shapes to match
-
-        breakpoint()
-
-        task_encoding = task_encoding.expand(-1, n_layers, -1)
-        pos_emb = pos_emb.unsqueeze(1).expand(-1, n_layers, -1, -1)
-        layer_emb = layer_emb.unsqueeze(2)  # (B, L, 1, H//4)
+        pos_emb = pos_emb.unsqueeze(1).expand(-1, n_layers, -1, -1)  # (B, L, P, H // 4)
+        layer_emb = (
+            layer_emb.unsqueeze(0).unsqueeze(2).expand(bsz, -1, n_positions, -1)
+        )  # (B, L, 1, H//4)
+        task_encoding = task_encoding.unsqueeze(2).expand(
+            -1, -1, n_positions, -1
+        )  # (B, L, P, H // 2)
 
         # (B, L, P, H)
         repr = torch.cat(
             [
-                task_encoding.unsqueeze(2).expand(-1, -1, n_positions, -1),
-                layer_emb.expand(-1, -1, n_positions, -1),
+                task_encoding,
+                layer_emb,
                 pos_emb,
             ],
             dim=-1,
         )
 
         out = self.mlp(repr)
-        rotation_matrix_unorth = self.rotate_head(out).reshape(
+        rotation_matrix = self.rotate_head(out).reshape(
             -1, n_layers, n_positions, self.target_embed_dim, self.rank
         )
-        rotation_matrix, _ = torch.linalg.qr(rotation_matrix_unorth, mode="reduced")
+        # rotation_matrix, _ = torch.linalg.qr(rotation_matrix, mode="reduced")
         weight_matrix = self.weight_head(out).reshape(
             -1, n_layers, n_positions, self.target_embed_dim, self.rank
         )

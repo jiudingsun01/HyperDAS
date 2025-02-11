@@ -803,7 +803,8 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         editor_input_ids = None
 
         layer_hidden_states = []
-        for layer_idx in intervention_layers.tolist():
+        intervention_layer_list = intervention_layers.cpu().tolist()
+        for layer_idx in intervention_layer_list:
             # Patch intervention layer each time
             self.hypernetwork.lm_head.intervention_layer = layer_idx
             interpretor_output = self.hypernetwork(
@@ -853,9 +854,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
                     self.target_model.model.layers[layer_idx - 1],
                     partial(representation_swap, current_layer=layer_idx),
                 )
-                for layer_idx in intervention_layers[
-                    0
-                ].unique()  # take first batch since identical
+                for layer_idx in intervention_layer_list
             ]
 
         with add_fwd_hooks(hooks):
