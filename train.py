@@ -153,7 +153,10 @@ def run_experiment(
                     num_workers=num_workers,
                     pin_memory=True,
                 ),
-                name=os.path.basename(config.dataset.test_path[i]),
+                name=os.path.basename(
+                    config.dataset.test_path[i]
+                    or config.dataset.train_path + f"_test{i}"
+                ),
             )
             for i, test_set_ in enumerate(test_set)
         ]
@@ -168,7 +171,9 @@ def run_experiment(
                     num_workers=num_workers,
                     pin_memory=True,
                 ),
-                name=os.path.basename(config.dataset.test_path),
+                name=os.path.basename(
+                    config.dataset.test_path or config.dataset.train_path
+                ),
             )
         ]
 

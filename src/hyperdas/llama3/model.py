@@ -70,6 +70,15 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
+        self.target_model_tokenizer = AutoTokenizer.from_pretrained(
+            config.model.target_model_name_or_path
+        )
+        self.target_model_tokenizer.padding_side = "left"
+        self.target_model_tokenizer.pad_token = self.target_model_tokenizer.eos_token
+        self.target_model_tokenizer.pad_token_id = (
+            self.target_model_tokenizer.eos_token_id
+        )
+
         self.residual_cache = None
         self.opt = None
         self.max_eval_steps = config.training.max_eval_steps
@@ -1014,12 +1023,13 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         )
 
         self.lm_judge_evaluator = LMJudgeEvaluator(
-            model_name=judge_model,
+            model_name=self.config.model.name_or_path,
             lm_model=lm_model,
             concept_id=concept_id,
         )
         self.winrate_evaluator = WinRateEvaluator(
-            model_name=self.config.name_or_path,
+            model_name=self.config.model.name_or_path,
+            lm_model=lm_model,
             baseline_model=baseline_model,
             concept_id=concept_id,
         )
@@ -1054,31 +1064,33 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
     @torch.no_grad()
     def eval_accuracy(
         self,
-        test_dataloader,
+        test_dataloader: NamedDataLoader,
         max_new_tokens: int = 100,
         temperature: float = 0.7,
         do_sample: bool = True,
-        max_steps: Optional[int] = None,
     ) -> Dict[str, float]:
         """
         Generate completions with and without intervention, then evaluate using axbench metrics
+        TODO(sid): add support for multiple inference backends
         """
         from tqdm import tqdm
 
         eval_data = []
 
         for step, batch in enumerate(
-            tqdm(test_dataloader, desc="Generating completions")
+            tqdm(test_dataloader.data_loader, desc="eval steps")
         ):
-            if max_steps and step >= max_steps:
-                logger.debug(f"\nStopping early at {max_steps} steps")
+            if self.max_eval_steps >= 0 and step >= self.max_eval_steps:
+                logger.debug(f"\nStopping early at {self.max_eval_steps} steps")
                 break
+
+            # Move batch to GPU
+            batch = {k: v.to(self.device) for k, v in batch.items()}
 
             try:
                 # Generate with intervention
                 outputs_with_intervention = self.interpretor.generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
+                    input_ids=batch["editor_input_ids"],
                     base_input_ids=batch.get("base_input_ids"),
                     base_attention_mask=batch.get("base_attention_mask"),
                     base_intervention_mask=batch.get("base_intervention_mask"),
@@ -1093,8 +1105,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
                 # Generate without intervention (baseline)
                 outputs_no_intervention = self.interpretor.generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
+                    input_ids=batch["editor_input_ids"],
                     base_input_ids=batch.get("base_input_ids"),
                     base_attention_mask=batch.get("base_attention_mask"),
                     base_intervention_mask=batch.get("base_intervention_mask"),
@@ -1108,14 +1119,14 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 )
 
                 # Convert outputs to text
-                intervention_texts = self.target_model.tokenizer.batch_decode(
+                intervention_texts = self.target_model_tokenizer.batch_decode(
                     outputs_with_intervention, skip_special_tokens=True
                 )
-                baseline_texts = self.target_model.tokenizer.batch_decode(
+                baseline_texts = self.target_model_tokenizer.batch_decode(
                     outputs_no_intervention, skip_special_tokens=True
                 )
-                original_prompts = self.target_model.tokenizer.batch_decode(
-                    batch["input_ids"], skip_special_tokens=True
+                original_prompts = self.target_model_tokenizer.batch_decode(
+                    batch["base_input_ids"], skip_special_tokens=True
                 )
 
                 for i in range(len(intervention_texts)):
@@ -1125,7 +1136,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                                 "concept_id", ["default"] * len(intervention_texts)
                             )[i],
                             "original_prompt": original_prompts[i],
-                            f"{self.config.name_or_path}_steered_generation": intervention_texts[
+                            f"{self.config.model.target_model_name_or_path}_steered_generation": intervention_texts[
                                 i
                             ],
                             "PromptSteering_steered_generation": baseline_texts[i],
@@ -1140,7 +1151,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                                 "concept_id", ["default"] * len(intervention_texts)
                             )[i],
                             "original_prompt": original_prompts[i],
-                            f"{self.config.name_or_path}_steered_generation": intervention_texts[
+                            f"{self.config.model.name_or_path}_steered_generation": intervention_texts[
                                 i
                             ],
                             "PromptSteering_steered_generation": baseline_texts[i],
@@ -1149,8 +1160,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     )
 
             except Exception as e:
-                logger.error(f"Error processing batch {step}: {str(e)}")
-                continue
+                raise e
 
         if not eval_data:
             raise ValueError("No successful evaluations completed")
@@ -1160,14 +1170,21 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         logger.info(f"\nCompleted generation for {len(eval_data)} examples")
 
         # Run evaluation
+        if not self.winrate_evaluator and not self.lm_judge_evaluator:
+            self.setup_evaluators(
+                judge_model=self.config.model.judge_model,
+                baseline_model=self.config.model.baseline_model,
+            )
         metrics = self.evaluate_axbench(eval_df)
 
         if wandb.run:
             # Log raw evaluation data
             wandb.log(
                 {
-                    "steering/generations": wandb.Table(dataframe=eval_df),
-                    "steering/winrate": wandb.Table(
+                    f"{test_dataloader.name}_steering/generations": wandb.Table(
+                        dataframe=eval_df
+                    ),
+                    f"{test_dataloader.name}_steering/winrate": wandb.Table(
                         dataframe=eval_df[eval_df["factor"] == "intervention"]
                     ),
                 }
@@ -1193,7 +1210,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
             wandb.log(
                 {
-                    "concept_table": wandb.Table(
+                    f"{test_dataloader.name}/concept_table": wandb.Table(
                         columns=[
                             "concept_id",
                             "concept",
@@ -1212,15 +1229,41 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             if "lm_judge" in metrics:
                 wandb.log(
                     {
-                        "lm_judge/concept_relevance": metrics["lm_judge"][
-                            "relevance_concept_ratings"
+                        f"{test_dataloader.name}/lm_judge/concept_relevance": metrics[
+                            "lm_judge"
+                        ]["relevance_concept_ratings"],
+                        f"{test_dataloader.name}/lm_judge/instruction_relevance": metrics[
+                            "lm_judge"
+                        ]["relevance_instruction_ratings"],
+                        f"{test_dataloader.name}/lm_judge/fluency": metrics["lm_judge"][
+                            "fluency_ratings"
                         ],
-                        "lm_judge/instruction_relevance": metrics["lm_judge"][
-                            "relevance_instruction_ratings"
-                        ],
-                        "lm_judge/fluency": metrics["lm_judge"]["fluency_ratings"],
-                        "lm_judge/aggregated": metrics["lm_judge"]["lm_judge_rating"],
+                        f"{test_dataloader.name}/lm_judge/aggregated": metrics[
+                            "lm_judge"
+                        ]["lm_judge_rating"],
                     }
+                )
+
+        # Log metrics to console
+        for concept_id, concept_data in eval_data.groupby("concept_id"):
+            logger.info(
+                f"\nResults for concept: {concept_data['input_concept'].iloc[0]}"
+            )
+
+            # Log winrate metrics
+            if "winrate" in metrics:
+                win_rate = metrics["winrate"].get(concept_id, {}).get("win_rate")
+                logger.info(f"Win Rate: {win_rate:.3f}")
+
+            # Log LM Judge metrics
+            if "lm_judge" in metrics:
+                lm_metrics = metrics["lm_judge"]
+                logger.info(
+                    "LM Judge Scores:\n"
+                    f"  Concept Relevance: {lm_metrics['relevance_concept_ratings']:.3f}\n"
+                    f"  Instruction Relevance: {lm_metrics['relevance_instruction_ratings']:.3f}\n"
+                    f"  Fluency: {lm_metrics['fluency_ratings']:.3f}\n"
+                    f"  Aggregate Score: {lm_metrics['lm_judge_rating']:.3f}"
                 )
 
         return metrics
@@ -1288,8 +1331,27 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         break
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
-                            # TODO: Evaluate the model
-                            pass
+                            metrics = {}
+                            for loader in test_loader:
+                                metrics[loader.name] = self.eval_accuracy(
+                                    loader,
+                                    max_new_tokens=self.config.model.sampling.max_new_tokens,
+                                    temperature=self.config.model.sampling.temperature,
+                                    do_sample=self.config.model.sampling.do_sample,
+                                )
+
+                            # Dump to json file
+                            if save_dir is not None:
+                                metrics_path = os.path.join(
+                                    save_dir,
+                                    run_name,
+                                    f"metrics_epoch_{epoch}_step_{cur_steps}.json",
+                                )
+                                os.makedirs(
+                                    os.path.dirname(metrics_path), exist_ok=True
+                                )
+                                with open(metrics_path, "w") as f:
+                                    json.dump(metrics, f, indent=2)
 
                     if checkpoint_per_steps is not None:
                         if (
@@ -1385,6 +1447,13 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     )
 
         result_dict = {}
+        for tl in test_loader:
+            result_dict[tl.name] = self.eval_accuracy(
+                tl,
+                max_new_tokens=self.config.model.sampling.max_new_tokens,
+                temperature=self.config.model.sampling.temperature,
+                do_sample=self.config.model.sampling.do_sample,
+            )
 
         # Save the final model
         if save_model and save_dir:

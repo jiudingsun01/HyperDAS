@@ -608,6 +608,11 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
     def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
         do_intervention = kwargs.pop("do_intervention", True)
+
+        for kw in list(kwargs.keys()):
+            if kw.startswith("base") or "intervention" in kw:
+                kwargs.pop(kw)
+
         if do_intervention:
             try:
                 self.prepare_for_generation()
@@ -618,21 +623,19 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             outputs = self.target_model.generate(*args, **kwargs)
         return outputs
 
-    def _create_intervention_hook(self, layer_idx):
-        def intervention_forward(*args, **kwargs):
-            outputs = self.original_layer_forward[layer_idx](*args, **kwargs)
-
+    def _create_generate_intervention_hook(self, layer_idx):
+        def intervention_forward(module, input, kwargs, output):
             # Only apply intervention during prefill phase
-            if kwargs.get("past_key_value") is None:  # prefill mode
-                hidden_states = outputs[0]
+            if kwargs.get("past_key_value") is None:
+                hidden_states = output[0]
                 self._cache["current_layer"] = layer_idx
                 modified_states, _ = self._apply_intervention(
                     hidden_states,
                     hypernet_hidden_states=self._cache["hypernet_hidden_states"],
                 )
-                outputs = (modified_states,) + outputs[1:]
+                output = (modified_states,) + output[1:]
 
-            return outputs
+            return output
 
         return intervention_forward
 
@@ -641,13 +644,14 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         self.intervention_hooks = []
         for layer_idx, layer in enumerate(self.target_model.model.layers):
             intervention_layers = (
-                [self.config.model.intervention_layer]
-                if isinstance(self.config.model.intervention_layer, int)
-                else self.config.model.intervention_layer
+                [self.config.intervention_layer]
+                if isinstance(self.config.intervention_layer, int)
+                else self.config.intervention_layer
             )
             if layer_idx in intervention_layers:
+                # NOTE: important to allow kwargs else we can't check if in generation mode all kwargs ignored!
                 hook = layer.register_forward_hook(
-                    self._create_intervention_hook(layer_idx)
+                    self._create_generate_intervention_hook(layer_idx), with_kwargs=True
                 )
                 self.intervention_hooks.append(hook)
 
@@ -655,7 +659,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         """Remove hooks after generation"""
         for hook in self.intervention_hooks:
             hook.remove()
-        self.intervention_hooks = []
+        self.intervention_hooks.clear()
 
     def _apply_intervention(
         self,
