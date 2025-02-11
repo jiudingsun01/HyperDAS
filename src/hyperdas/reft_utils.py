@@ -224,30 +224,30 @@ class LoreftIntervention(
         if self.batch_rotation is not None and self.batch_weights is not None:
             # self.batch_rotation: [B, P, H, R]
             # self.batch_weights: [B, P, H, R]
-            # base: [B, seq_len, H]
+            # base: [B, S, H]
 
             batch_size, seq_len, hidden_dim = base.shape
-            position_mask = torch.zeros(
-                (batch_size, seq_len), device=base.device, dtype=torch.bool
-            )
             batch_indices = torch.arange(batch_size, device=base.device).unsqueeze(-1)
-            position_mask[batch_indices, intervention_positions] = True  # [B, seq_len]
+            intervention_states = base[batch_indices, intervention_positions].unsqueeze(
+                2
+            )  # [B, P, 1, H]
 
             # Apply LoReFT transformation where mask is True
-            rotated_states = torch.matmul(base, self.batch_rotation)  # [B, seq_len, R]
-            learned_states = torch.matmul(base, self.batch_weights)  # [B, seq_len, R]
+            rotated_states = torch.matmul(
+                intervention_states, self.batch_rotation
+            )  # [B, P, R]
+            learned_states = torch.matmul(
+                intervention_states, self.batch_weights
+            )  # [B, P, R]
 
             mixed_states = torch.matmul(
-                (self.act_fn(learned_states) - rotated_states),  # [B, seq_len, R]
+                (self.act_fn(learned_states) - rotated_states),  # [B, P, R]
                 self.batch_rotation.transpose(-2, -1),  # [B, P, R, H]
-            )  # [B, seq_len, H]
+            )  # [B, P, H]
 
-            # Blend based on position mask
-            mixed_output = torch.where(
-                position_mask.unsqueeze(-1),  # [B, seq_len, H]
-                mixed_states,
-                base,
-            )
+            # Blend based on intervention position mask
+            mixed_output = base.clone()
+            mixed_output[batch_indices, intervention_positions] = mixed_states.squeeze()
         else:
             # Fallback to global parameters
             rotated_base = self.rotate_layer(base)

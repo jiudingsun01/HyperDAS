@@ -178,18 +178,20 @@ def tokenize_text_inputs(tokenizer, inputs, targets, add_space_before_target=Tru
     return return_dict
 
 
-def parse_positions(positions: str):
-    # parse position
-    first_n, last_n = 0, 0
+def parse_positions(positions: str, seq_len: int):
+    import numpy as np
+
     if "+" in positions:
         first_n = int(positions.split("+")[0].strip("f"))
         last_n = int(positions.split("+")[1].strip("l"))
-    else:
-        if "f" in positions:
-            first_n = int(positions.strip("f"))
-        elif "l" in positions:
-            last_n = int(positions.strip("l"))
-    return first_n, last_n
+        return np.concatenate(
+            [np.arange(first_n), np.arange(seq_len - last_n, seq_len)]
+        ).tolist()
+    elif "f" in positions:
+        return np.arange(int(positions.strip("f"))).tolist()
+    elif "l" in positions:
+        return np.arange(seq_len - int(positions.strip("l")), seq_len).tolist()
+    return []
 
 
 def get_axbench_collate_fn(
@@ -219,9 +221,14 @@ def get_axbench_collate_fn(
 
         # create intervention layer and positions
         if mode == "steering":
-            pos = parse_positions(intervention_positions or "f7+l7")
-            intervention_pos = torch.tensor([pos for _ in batch])
-            # NOTE: this is non-batched for ease of use
+            # TODO(sid): we can eventually add padding to support variable position interventions within batch
+            intervention_pos = torch.tensor(
+                [
+                    parse_positions(intervention_positions or "f7+l7", len(base_ids))
+                    for base_ids in returned_dict["base_input_ids"]
+                ]
+            )
+            # NOTE: this is non-batched for ease of use, maybe we'll fix later?
             intervention_l = torch.tensor(intervention_layers or [7])
             returned_dict["intervention_layers"] = intervention_l
             returned_dict["intervention_positions"] = intervention_pos

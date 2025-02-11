@@ -658,7 +658,10 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         self.intervention_hooks = []
 
     def _apply_intervention(
-        self, hidden_states, hypernet_hidden_states=None, metrics=None
+        self,
+        hidden_states,
+        intervention_positions,
+        metrics=None,
     ):
         """Common intervention logic used by both forward and generation"""
         if not hasattr(self, "das_module"):
@@ -666,28 +669,16 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         current_layer = self._cache["current_layer"]
 
-        if hypernet_hidden_states is None:
-            # During generation, we'll reuse the cached hypernet states
-            hypernet_hidden_states = self._cache["hypernet_hidden_states"]
-            rotation_matrix = self._cache["rotation_matrix"][:, current_layer]
-            weight_matrix = self._cache["weight_matrix"][:, current_layer]
-        else:
-            # run hypernetwork to generate ReFT weights
-            # each of shape (B, L, P, H, R)
-            rotation_matrix, weight_matrix = self.reft_generator(
-                hypernet_hidden_states,
-                self._cache["intervention_layers"],
-                self._cache["intervention_positions"],
-            )
-            rotation_matrix = rotation_matrix[:, current_layer]
-            weight_matrix = weight_matrix[:, current_layer]
+        # During generation, we'll reuse the cached hypernet states
+        rotation_matrix = self._cache["rotation_matrix"][:, current_layer]
+        weight_matrix = self._cache["weight_matrix"][:, current_layer]
 
         # Set the batch parameters for the DAS module
         self.das_module.set_batch_parameters(rotation_matrix, weight_matrix)
 
-        # Apply intervention
+        # Apply intervention, assuming LoReFT impl
         intervention_output = self.das_module(
-            hidden_states, hidden_states=hypernet_hidden_states
+            hidden_states, intervention_positions=intervention_positions
         )
         mixed_output = intervention_output.mixed_output
         metrics = intervention_output.metrics
@@ -781,10 +772,6 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         n_layer = base_hidden_states.shape[2]
 
-        base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(1, 1, n_layer)
-
-        n_layer = base_hidden_states.shape[2]
-
         collapsed_base_hidden_states = base_hidden_states.reshape(
             base_hidden_states.shape[0],
             base_hidden_states.shape[1] * base_hidden_states.shape[2],
@@ -835,13 +822,14 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
-        def representation_swap(module, input, output, current_layer=0):
+        def representation_swap(module, input, output, current_layer_rel_idx=0):
             base_hidden_states = output[0].clone()
 
             nonlocal metrics
 
+            self._cache["current_layer"] = current_layer_rel_idx
             mixed_output, metrics = self._apply_intervention(
-                base_hidden_states, hypernet_hidden_states=hypernet_hidden_states
+                base_hidden_states, intervention_positions=intervention_positions
             )
             output[0][:] += mixed_output
 
@@ -852,9 +840,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             hooks = [
                 (
                     self.target_model.model.layers[layer_idx - 1],
-                    partial(representation_swap, current_layer=layer_idx),
+                    partial(representation_swap, current_layer_rel_idx=rel_idx),
                 )
-                for layer_idx in intervention_layer_list
+                for rel_idx, layer_idx in enumerate(intervention_layer_list)
             ]
 
         with add_fwd_hooks(hooks):
@@ -1288,24 +1276,26 @@ class LlamaInterpretor(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: torch.Tensor = None,
-        editor_attention_mask: torch.Tensor = None,
-        base_input_ids: torch.Tensor = None,
-        base_attention_mask: torch.Tensor = None,
-        base_intervention_mask: torch.Tensor = None,
-        source_input_ids: torch.Tensor = None,
-        source_attention_mask: torch.Tensor = None,
-        source_intervention_mask: torch.Tensor = None,
-        base_hidden_states: torch.Tensor = None,
-        base_position_ids: torch.Tensor = None,
-        source_hidden_states: torch.Tensor = None,
-        source_position_ids: torch.Tensor = None,
-        intervention_layer: int = None,
+        editor_input_ids: Optional[torch.Tensor] = None,
+        editor_attention_mask: Optional[torch.Tensor] = None,
+        base_input_ids: Optional[torch.Tensor] = None,
+        base_attention_mask: Optional[torch.Tensor] = None,
+        base_intervention_mask: Optional[torch.Tensor] = None,
+        source_input_ids: Optional[torch.Tensor] = None,
+        source_attention_mask: Optional[torch.Tensor] = None,
+        source_intervention_mask: Optional[torch.Tensor] = None,
+        base_hidden_states: Optional[torch.Tensor] = None,
+        base_position_ids: Optional[torch.Tensor] = None,
+        source_hidden_states: Optional[torch.Tensor] = None,
+        source_position_ids: Optional[torch.Tensor] = None,
+        intervention_layer: Optional[int] = None,
         output_vanilla_hidden_states: bool = True,
         output_edited_hidden_states: bool = False,
         output_intervention_weight: bool = True,
-        intervention_weight: torch.Tensor = None,
-        inference_mode: str = None,
+        intervention_weight: Optional[torch.Tensor] = None,
+        inference_mode: Optional[
+            Literal["column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
+        ] = None,
     ) -> InterpretorModelOutput:
         assert inference_mode in [
             None,

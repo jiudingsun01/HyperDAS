@@ -11,7 +11,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from openai import AsyncOpenAI
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
@@ -886,14 +886,22 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
 class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
     def __init__(self, config: DictConfig, device):
         super().__init__(config, device)
-
-        self.interpretor_config.num_target_layers = len(
-            config.model.intervention_layer
-            if isinstance(config.model.intervention_layer, list)
-            else [config.model.intervention_layer]
+        # Define sizes of embedding tables for layers and positions
+        self.interpretor_config.num_target_layers = (
+            max(
+                config.model.intervention_layer
+                if isinstance(config.model.intervention_layer, ListConfig)
+                else [config.model.intervention_layer]
+            )
+            + 1
         )
-        self.interpretor_config.num_target_positions = len(
-            parse_positions(config.model.intervention_positions)
+        self.interpretor_config.num_target_positions = (
+            max(
+                parse_positions(
+                    config.model.intervention_positions, seq_len=config.model.max_length
+                )
+            )
+            + 1
         )
         self.interpretor_config.target_hidden_size = config.model.target_hidden_size
         self.rotate_lr = config.training.get("rotate_lr", 1e-3)

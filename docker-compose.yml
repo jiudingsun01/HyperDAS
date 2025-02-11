@@ -21,20 +21,16 @@ services:
 
     network_mode: host
     command: >
-      zsh -c "
-      if command -v ray >/dev/null 2>&1; then
-        ray start --head \
-        --include-dashboard=true \
-        --dashboard-host=0.0.0.0 \
-        --dashboard-port=8265 \
-        --port=6379 \
-        --ray-client-server-port=10001 \
-        --node-ip-address=0.0.0.0 \
-        --block || true
-      else
-        echo 'Ray is not installed. Container will continue running.'
-        tail -f /dev/null
-      fi"
+      bash -c "
+      ray start --head
+      --include-dashboard=true
+      --dashboard-host=0.0.0.0
+      --dashboard-port=8265
+      --port=6379
+      --ray-client-server-port=10001
+      --node-ip-address=0.0.0.0
+      --block &&
+      tail -f /dev/null"
 
     deploy:
       resources:

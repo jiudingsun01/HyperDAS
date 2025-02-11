@@ -70,6 +70,7 @@ def run_experiment(
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.model_max_length = config.model.max_length
 
     # TODO(sid) refactor this into a data loading function
     def load_wrapper(path, split="train"):

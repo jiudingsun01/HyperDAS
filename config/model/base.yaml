@@ -23,6 +23,7 @@ break_asymmetric: false
 importance_power: -2
 epsilon: 1e-6
 hat_matrix: false
+max_length: 1024
 
 intepretor_type: "regular"
 hypernetwork_type: "disentangle"
