@@ -609,9 +609,12 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
     def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
         do_intervention = kwargs.pop("do_intervention", True)
 
+        # prune kwargs for generation
         for kw in list(kwargs.keys()):
             if kw.startswith("base") or "intervention" in kw:
                 kwargs.pop(kw)
+            elif kw.startswith("target_"):
+                kwargs[kw.replace("target_", "")] = kwargs.pop(kw)
 
         if do_intervention:
             try:
@@ -697,6 +700,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         base_intervention_mask: Optional[torch.Tensor] = None,
         base_hidden_states: Optional[torch.Tensor] = None,
         base_position_ids: Optional[torch.Tensor] = None,
+        target_input_ids: Optional[torch.Tensor] = None,
+        target_attention_mask: Optional[torch.Tensor] = None,
+        target_position_ids: Optional[torch.Tensor] = None,
         intervention_layers: Optional[List[int]] = None,
         intervention_positions: Optional[torch.LongTensor] = None,
         run_weight_generation: bool = True,
@@ -739,6 +745,12 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             # -1 for all the padding tokens and start from 0 for the rest
             base_position_ids = (
                 torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
+            )
+
+        if target_position_ids is None:
+            # -1 for all the padding tokens and start from 0 for the rest
+            target_position_ids = (
+                torch.cumsum(target_attention_mask, dim=1) * target_attention_mask - 1
             )
 
         # Run target model for encoded hidden states
@@ -853,9 +865,9 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
             # THE END OF `layer` AS A SIDE EFFECT)
             target_result = self.target_model(
-                input_ids=base_input_ids,
-                attention_mask=base_attention_mask,
-                position_ids=base_position_ids,
+                input_ids=target_input_ids,
+                attention_mask=target_attention_mask,
+                position_ids=target_position_ids,
                 output_hidden_states=True,
             )
 
@@ -879,6 +891,7 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
         compute_metrics=False,
         device="cuda",
     ):
+        # TODO(sid) implement target tokenizer functionality and inputs to forward pass
         super().__init__()
 
         self.config = config

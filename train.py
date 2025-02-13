@@ -1,3 +1,5 @@
+"""Main entrypoint script to train HyperDAS models and derivatives."""
+
 import gc
 import os
 import random
@@ -6,16 +8,15 @@ from datetime import datetime
 import hydra
 import omegaconf
 import torch
-from datasets import DatasetDict, load_dataset, load_from_disk
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
 
 import wandb
 from logger import get_logger
+from src.common.utils import load_wrapper, setup_tokenizer
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
 from src.hyperdas.data.axbench import split_axbench16k_train_test_fast
 from src.hyperdas.llama3.model import (
@@ -64,30 +65,19 @@ def run_experiment(
         )
         wandb.run.log_code("/workspace/HyperDAS/src/hyperdas/")
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    tokenizer.padding_side = "left"
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
-    tokenizer.model_max_length = config.model.max_length
-
-    # TODO(sid) refactor this into a data loading function
-    def load_wrapper(path, split="train"):
-        try:
-            if os.path.exists(path):
-                dataset = load_from_disk(path)
-            else:
-                dataset = load_dataset(path)
-
-            # Extract train split if it exists
-            if isinstance(dataset, DatasetDict) and split in dataset:
-                return dataset[split]
-            return dataset
-
-        except Exception as e:
-            logger.error(f"Error loading dataset: {str(e)}")
-            raise e
+    hypernet_tokenizer = setup_tokenizer(
+        model_name_or_path=config.model.name_or_path, max_length=config.model.max_length
+    )
+    if (
+        config.model.target_model_name_or_path
+        and config.model.target_model_name_or_path != config.model.name_or_path
+    ):
+        target_tokenizer = setup_tokenizer(
+            model_name_or_path=config.model.target_model_name_or_path,
+            max_length=config.model.max_length,
+        )
+    else:
+        target_tokenizer = hypernet_tokenizer
 
     train_set = load_wrapper(config.dataset.train_path, split="train")
 
@@ -111,14 +101,16 @@ def run_experiment(
 
     if config.dataset.dataset_type == "axbench":
         collate_fn = get_axbench_collate_fn(
-            tokenizer,
+            hypernet_tokenizer,
+            target_tokenizer=target_tokenizer,
             mode=config.dataset.axbench_mode,
             intervention_layers=config.model.intervention_layer,
             intervention_positions=config.model.intervention_positions,
         )
     elif config.dataset.dataset_type == "ravel":
         collate_fn = get_ravel_collate_fn(
-            tokenizer,
+            hypernet_tokenizer,
+            target_tokenizer=target_tokenizer,
             source_suffix_visibility=config.dataset.source_suffix_visibility,
             base_suffix_visibility=config.dataset.base_suffix_visibility,
             contain_entity_position=True,

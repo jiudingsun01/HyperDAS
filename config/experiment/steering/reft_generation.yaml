@@ -1,6 +1,6 @@
 defaults:
   - /model/tinyllama_gemma2b_reft
-  - /dataset/axbench16k
+  - /dataset/concept10_2b_l10
   - /training/base
   - /loss/base
   - /wandb_config/base
@@ -12,6 +12,7 @@ training:
   eval_per_steps: 100
   save_model: true
   debug_model: true
+  train_batch_size: 4
 
 loss:
   return_penalty: false

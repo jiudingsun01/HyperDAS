@@ -9,8 +9,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 
+# TODO(sid) implement target tokenizer functionality
 def get_ravel_collate_fn(
     tokenizer,
+    target_tokenizer=None,
     contain_entity_position=False,
     dataset_filtering=False,
     source_suffix_visibility=False,

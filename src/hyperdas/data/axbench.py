@@ -107,7 +107,9 @@ def split_axbench16k_train_test_fast(
     return train_dataset, test_dataset
 
 
-def tokenize_text_inputs(tokenizer, inputs, targets, add_space_before_target=True):
+def tokenize_text_inputs(
+    tokenizer, inputs, targets, add_space_before_target=True, prefix="base"
+):
     # TODO(sid): we should add padding to multiple of 8, for example, to improve training efficiency.
     if add_space_before_target:
         input_texts = []
@@ -169,9 +171,9 @@ def tokenize_text_inputs(tokenizer, inputs, targets, add_space_before_target=Tru
     tokenized_labels = torch.stack(tokenized_labels)
 
     return_dict = {
-        "base_input_ids": tokenized["input_ids"],
-        "base_attention_mask": tokenized["attention_mask"],
-        "base_intervention_mask": base_intervention_mask,
+        f"{prefix}_input_ids": tokenized["input_ids"],
+        f"{prefix}_attention_mask": tokenized["attention_mask"],
+        f"{prefix}_intervention_mask": base_intervention_mask,
         "labels": tokenized_labels,
     }
 
@@ -195,7 +197,8 @@ def parse_positions(positions: str, seq_len: int):
 
 
 def get_axbench_collate_fn(
-    tokenizer,
+    hypernet_tokenizer,
+    target_tokenizer=None,
     mode="steering",
     intervention_layers=None,
     intervention_positions=None,
@@ -208,7 +211,7 @@ def get_axbench_collate_fn(
             edit_instructions.append(b["output_concept"])
             targets.append(b["output"])
 
-        editor_input_ids = tokenizer(
+        editor_input_ids = hypernet_tokenizer(
             edit_instructions, return_tensors="pt", padding=True, truncation=True
         )["input_ids"]
         is_causal = torch.tensor([1 for _ in batch])
@@ -216,16 +219,24 @@ def get_axbench_collate_fn(
         returned_dict = {
             "editor_input_ids": editor_input_ids,
             "is_causal": is_causal,
-            **tokenize_text_inputs(tokenizer, inputs, targets),
+            **tokenize_text_inputs(hypernet_tokenizer, inputs, targets, prefix="base"),
         }
+
+        if target_tokenizer:
+            target_inputs = tokenize_text_inputs(
+                target_tokenizer, inputs, targets, prefix="target"
+            )
+            returned_dict.pop("labels")
+            target_inputs.pop("target_intervention_mask")
+            returned_dict.update(target_inputs)
 
         # create intervention layer and positions
         if mode == "steering":
             # TODO(sid): we can eventually add padding to support variable position interventions within batch
             intervention_pos = torch.tensor(
                 [
-                    parse_positions(intervention_positions or "f7+l7", len(base_ids))
-                    for base_ids in returned_dict["base_input_ids"]
+                    parse_positions(intervention_positions or "f7+l7", len(targ_ids))
+                    for targ_ids in returned_dict["target_input_ids"]
                 ]
             )
             # NOTE: this is non-batched for ease of use, maybe we'll fix later?

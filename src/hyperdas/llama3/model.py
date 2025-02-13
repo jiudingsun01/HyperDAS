@@ -936,6 +936,9 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         base_input_ids: Optional[torch.LongTensor] = None,
         base_attention_mask: Optional[torch.FloatTensor] = None,
         base_intervention_mask: Optional[torch.FloatTensor] = None,
+        target_input_ids: Optional[torch.LongTensor] = None,
+        target_attention_mask: Optional[torch.FloatTensor] = None,
+        target_position_ids: Optional[torch.LongTensor] = None,
         intervention_layers: Optional[torch.Tensor] = None,
         intervention_positions: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
@@ -950,6 +953,9 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
+            target_input_ids=target_input_ids,
+            target_attention_mask=target_attention_mask,
+            target_position_ids=target_position_ids,
             intervention_layers=intervention_layers,
             intervention_positions=intervention_positions,
         )
@@ -1089,12 +1095,16 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
             try:
                 # Generate with intervention
-                outputs_with_intervention = self.interpretor.generate(
+                # Generate with intervention
+                full_outputs_with_intervention = self.interpretor.generate(
                     input_ids=batch["editor_input_ids"],
                     base_input_ids=batch.get("base_input_ids"),
                     base_attention_mask=batch.get("base_attention_mask"),
                     base_intervention_mask=batch.get("base_intervention_mask"),
                     base_position_ids=batch.get("base_position_ids"),
+                    target_input_ids=batch.get("target_input_ids"),
+                    target_attention_mask=batch.get("target_attention_mask"),
+                    target_position_ids=batch.get("target_position_ids"),
                     intervention_layers=batch.get("intervention_layers"),
                     intervention_positions=batch.get("intervention_positions"),
                     max_new_tokens=max_new_tokens,
@@ -1103,13 +1113,18 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     do_intervention=True,
                 )
 
+                # Truncate to only get newly generated tokens
+                input_length = batch["target_input_ids"].shape[1]
+                outputs_with_intervention = full_outputs_with_intervention[
+                    :, input_length:
+                ]
+
                 # Generate without intervention (baseline)
-                outputs_no_intervention = self.interpretor.generate(
+                full_outputs_no_intervention = self.interpretor.generate(
                     input_ids=batch["editor_input_ids"],
-                    base_input_ids=batch.get("base_input_ids"),
-                    base_attention_mask=batch.get("base_attention_mask"),
-                    base_intervention_mask=batch.get("base_intervention_mask"),
-                    base_position_ids=batch.get("base_position_ids"),
+                    target_input_ids=batch.get("target_input_ids"),
+                    target_attention_mask=batch.get("target_attention_mask"),
+                    target_position_ids=batch.get("target_position_ids"),
                     intervention_layers=batch.get("intervention_layers"),
                     intervention_positions=batch.get("intervention_positions"),
                     max_new_tokens=max_new_tokens,
@@ -1117,6 +1132,9 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     temperature=temperature,
                     do_intervention=False,  # Baseline without intervention
                 )
+
+                # Truncate baseline outputs as well
+                outputs_no_intervention = full_outputs_no_intervention[:, input_length:]
 
                 # Convert outputs to text
                 intervention_texts = self.target_model_tokenizer.batch_decode(
@@ -1126,15 +1144,16 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     outputs_no_intervention, skip_special_tokens=True
                 )
                 original_prompts = self.target_model_tokenizer.batch_decode(
-                    batch["base_input_ids"], skip_special_tokens=True
+                    batch["target_input_ids"], skip_special_tokens=True
+                )
+                steering_concepts = self.tokenizer.batch_decode(
+                    batch["editor_input_ids"], skip_special_tokens=True
                 )
 
                 for i in range(len(intervention_texts)):
                     eval_data.append(
                         {
-                            "input_concept": batch.get(
-                                "concept_id", ["default"] * len(intervention_texts)
-                            )[i],
+                            "input_concept": steering_concepts[i],
                             "original_prompt": original_prompts[i],
                             f"{self.config.model.target_model_name_or_path}_steered_generation": intervention_texts[
                                 i
@@ -1147,9 +1166,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     # Entry for baseline condition
                     eval_data.append(
                         {
-                            "input_concept": batch.get(
-                                "concept_id", ["default"] * len(intervention_texts)
-                            )[i],
+                            "input_concept": steering_concepts[i],
                             "original_prompt": original_prompts[i],
                             f"{self.config.model.name_or_path}_steered_generation": intervention_texts[
                                 i
@@ -1166,6 +1183,17 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             raise ValueError("No successful evaluations completed")
 
         eval_df = pd.DataFrame(eval_data)
+
+        # for idx, row in eval_df.head().iterrows():
+        #     print(f"Concept: {row['input_concept']}")
+        #     print("Steered generation:")
+        #     print(
+        #         row[f"{self.config.model.target_model_name_or_path}_steered_generation"]
+        #     )
+        #     print("\nBaseline generation:")
+        #     print(row["PromptSteering_steered_generation"])
+        #     print("=" * 100)
+        # breakpoint()
 
         logger.info(f"\nCompleted generation for {len(eval_data)} examples")
 
@@ -1245,7 +1273,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 )
 
         # Log metrics to console
-        for concept_id, concept_data in eval_data.groupby("concept_id"):
+        for concept_id, concept_data in eval_df.groupby("concept_id"):
             logger.info(
                 f"\nResults for concept: {concept_data['input_concept'].iloc[0]}"
             )
@@ -1391,6 +1419,9 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         base_input_ids=batch["base_input_ids"],
                         base_attention_mask=batch["base_attention_mask"],
                         base_intervention_mask=batch["base_intervention_mask"],
+                        target_input_ids=batch.get("target_input_ids"),
+                        target_attention_mask=batch.get("target_attention_mask"),
+                        target_position_ids=batch.get("target_position_ids"),
                         intervention_layers=batch["intervention_layers"],
                         intervention_positions=batch["intervention_positions"],
                         labels=batch["labels"],
@@ -1446,14 +1477,15 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         }
                     )
 
-        result_dict = {}
-        for tl in test_loader:
-            result_dict[tl.name] = self.eval_accuracy(
-                tl,
-                max_new_tokens=self.config.model.sampling.max_new_tokens,
-                temperature=self.config.model.sampling.temperature,
-                do_sample=self.config.model.sampling.do_sample,
-            )
+        if self.config.training.max_eval_steps != 0:
+            result_dict = {}
+            for tl in test_loader:
+                result_dict[tl.name] = self.eval_accuracy(
+                    tl,
+                    max_new_tokens=self.config.model.sampling.max_new_tokens,
+                    temperature=self.config.model.sampling.temperature,
+                    do_sample=self.config.model.sampling.do_sample,
+                )
 
         # Save the final model
         if save_model and save_dir:
