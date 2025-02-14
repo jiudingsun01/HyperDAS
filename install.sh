@@ -1,4 +1,4 @@
 #!/bin/bash
 
-pip install -e axbench -y
+pip install -e axbench
 pip uninstall asyncio -y

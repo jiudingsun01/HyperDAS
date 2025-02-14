@@ -6,9 +6,14 @@ defaults:
   - loss: base
   - wandb_config: base
   - experiment: null  # This should merge at root level
-  - override hydra/launcher: parallel 
+  - override hydra/launcher: ray_jobs
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
+
+hydra:
+  launcher:
+    poll_jobs: false
+    entrypoint_num_gpus: 1
 
 # Only keep other parameters here
 load_trained_from: null

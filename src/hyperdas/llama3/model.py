@@ -1025,16 +1025,16 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             cache_level="prompt",
             cache_tag="evaluate",
             master_data_dir="axbench/data",
-            temperature=0.7,
+            temperature=self.config.model.sampling.judge_temperature,
         )
 
         self.lm_judge_evaluator = LMJudgeEvaluator(
-            model_name=self.config.model.name_or_path,
+            model_name=self.config.model.target_model_name_or_path,
             lm_model=lm_model,
             concept_id=concept_id,
         )
         self.winrate_evaluator = WinRateEvaluator(
-            model_name=self.config.model.name_or_path,
+            model_name=self.config.model.target_model_name_or_path,
             lm_model=lm_model,
             baseline_model=baseline_model,
             concept_id=concept_id,
@@ -1272,27 +1272,47 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     }
                 )
 
+            # Log Winrate metrics
+            if "winrate" in metrics:
+                wandb.log(
+                    {
+                        f"{test_dataloader.name}/winrate/win_rate": metrics[
+                            "winrate"
+                        ].get("win_rate", 0),
+                        f"{test_dataloader.name}/winrate/loss_rate": metrics[
+                            "winrate"
+                        ].get("loss_rate", 0),
+                        f"{test_dataloader.name}/winrate/tie_rate": metrics[
+                            "winrate"
+                        ].get("tie_rate", 0),
+                    }
+                )
+
         # Log metrics to console
-        for concept_id, concept_data in eval_df.groupby("concept_id"):
+        logger.info("\nEvaluation Results:")
+
+        # Log winrate metrics
+        if "winrate" in metrics:
+            winrate_metrics = metrics["winrate"]
             logger.info(
-                f"\nResults for concept: {concept_data['input_concept'].iloc[0]}"
+                "Win/Loss/Tie Rates:\n"
+                f"  Win Rate: {winrate_metrics.get('win_rate', 0):.3f}\n"
+                f"  Loss Rate: {winrate_metrics.get('loss_rate', 0):.3f}\n"
+                f"  Tie Rate: {winrate_metrics.get('tie_rate', 0):.3f}\n"
+                f"  Baseline Model: {winrate_metrics.get('baseline_model', 'N/A')}"
             )
 
-            # Log winrate metrics
-            if "winrate" in metrics:
-                win_rate = metrics["winrate"].get(concept_id, {}).get("win_rate")
-                logger.info(f"Win Rate: {win_rate:.3f}")
-
-            # Log LM Judge metrics
-            if "lm_judge" in metrics:
-                lm_metrics = metrics["lm_judge"]
-                logger.info(
-                    "LM Judge Scores:\n"
-                    f"  Concept Relevance: {lm_metrics['relevance_concept_ratings']:.3f}\n"
-                    f"  Instruction Relevance: {lm_metrics['relevance_instruction_ratings']:.3f}\n"
-                    f"  Fluency: {lm_metrics['fluency_ratings']:.3f}\n"
-                    f"  Aggregate Score: {lm_metrics['lm_judge_rating']:.3f}"
-                )
+        # Log LM Judge metrics
+        if "lm_judge" in metrics:
+            lm_metrics = metrics["lm_judge"]
+            factors = lm_metrics["factor"]
+            logger.info(
+                "LM Judge Scores:\n"
+                f"  Concept Relevance: {factors[0]}={lm_metrics['relevance_concept_ratings'][0]:.3f}, {factors[1]}={lm_metrics['relevance_concept_ratings'][1]:.3f}\n"
+                f"  Instruction Relevance: {factors[0]}={lm_metrics['relevance_instruction_ratings'][0]:.3f}, {factors[1]}={lm_metrics['relevance_instruction_ratings'][1]:.3f}\n"
+                f"  Fluency: {factors[0]}={lm_metrics['fluency_ratings'][0]:.3f}, {factors[1]}={lm_metrics['fluency_ratings'][1]:.3f}\n"
+                f"  Aggregate Score: {factors[0]}={lm_metrics['lm_judge_rating'][0]:.3f}, {factors[1]}={lm_metrics['lm_judge_rating'][1]:.3f}"
+            )
 
         return metrics
 
