@@ -1095,7 +1095,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
             try:
                 # Generate with intervention
-                # Generate with intervention
                 full_outputs_with_intervention = self.interpretor.generate(
                     input_ids=batch["editor_input_ids"],
                     base_input_ids=batch.get("base_input_ids"),
@@ -1159,20 +1158,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                                 i
                             ],
                             "PromptSteering_steered_generation": baseline_texts[i],
-                            "factor": "hyperreft_steered",  # This example used intervention
-                        }
-                    )
-
-                    # Entry for baseline condition
-                    eval_data.append(
-                        {
-                            "input_concept": steering_concepts[i],
-                            "original_prompt": original_prompts[i],
-                            f"{self.config.model.name_or_path}_steered_generation": intervention_texts[
-                                i
-                            ],
-                            "PromptSteering_steered_generation": baseline_texts[i],
-                            "factor": "baseline",  # This example used no intervention
                         }
                     )
 
@@ -1183,17 +1168,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             raise ValueError("No successful evaluations completed")
 
         eval_df = pd.DataFrame(eval_data)
-
-        # for idx, row in eval_df.head().iterrows():
-        #     print(f"Concept: {row['input_concept']}")
-        #     print("Steered generation:")
-        #     print(
-        #         row[f"{self.config.model.target_model_name_or_path}_steered_generation"]
-        #     )
-        #     print("\nBaseline generation:")
-        #     print(row["PromptSteering_steered_generation"])
-        #     print("=" * 100)
-        # breakpoint()
 
         logger.info(f"\nCompleted generation for {len(eval_data)} examples")
 
@@ -1213,7 +1187,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         dataframe=eval_df
                     ),
                     f"{test_dataloader.name}_steering/winrate": wandb.Table(
-                        dataframe=eval_df[eval_df["factor"] == "intervention"]
+                        dataframe=eval_df
                     ),
                 }
             )
