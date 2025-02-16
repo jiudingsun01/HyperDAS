@@ -4,24 +4,19 @@ from abc import ABC, abstractmethod
 from math import ceil
 from typing import Dict, List, Optional
 
-import httpx
 import matplotlib.pyplot as plt
-import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig, ListConfig, OmegaConf
-from openai import AsyncOpenAI
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
+from transformers.modeling_outputs import ModelOutput
 
 import wandb
-from axbench.evaluators.lm_judge import LMJudgeEvaluator
-from axbench.evaluators.winrate import WinRateEvaluator
-from axbench.models.language_models import LanguageModel
 from logger import get_logger
-from src.hyperdas.data.axbench import parse_positions
+from src.hyperdas.data.axbench import parse_positions_varlen
 
 from ..das_utils import QuasiProjectiveIntervention
 from ..utils import InterpretorModelOutput, NamedDataLoader
@@ -105,7 +100,7 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def eval_accuracy(self, test_loaders, **kwargs):
+    def predict(self, test_loaders, **kwargs):
         pass
 
     @abstractmethod
@@ -492,7 +487,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         return fig, axes
 
     @torch.no_grad()
-    def eval_accuracy(
+    def predict(
         self,
         test_loaders: List[NamedDataLoader],
         inference_mode=None,
@@ -688,7 +683,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         if cur_steps % eval_per_steps == 0:
                             # Evaluate the model
                             for mode in inference_modes:
-                                accuracies, test_loss, _ = self.eval_accuracy(
+                                accuracies, test_loss, _ = self.predict(
                                     test_loader,
                                     inference_mode=mode,
                                     eval_n_label_tokens=3,
@@ -868,7 +863,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
         result_dict = {}
         for inference_mode in inference_modes:
-            accs, test_loss, correct_indices = self.eval_accuracy(
+            accs, test_loss, correct_indices = self.predict(
                 test_loader, inference_mode=inference_mode, eval_n_label_tokens=3
             )
             if inference_mode is None:
@@ -906,7 +901,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         )
         self.interpretor_config.num_target_positions = (
             max(
-                parse_positions(
+                parse_positions_varlen(
                     config.model.intervention_positions, seq_len=config.model.max_length
                 )
             )
@@ -1002,293 +997,64 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
         return _pred
 
-    def setup_evaluators(
-        self, judge_model, baseline_model="PromptSteering", concept_id=None
-    ):
-        # Create LanguageModel instance within the worker process
-        client = AsyncOpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            timeout=60.0,
-            http_client=httpx.AsyncClient(
-                limits=httpx.Limits(
-                    max_keepalive_connections=100, max_connections=1000
-                ),
-                headers={"Connection": "close"},
-            ),
-            max_retries=3,
-        )
-        lm_model = LanguageModel(
-            judge_model,
-            client,
-            dump_dir="assets/lm_cache",
-            use_cache=True,
-            cache_level="prompt",
-            cache_tag="evaluate",
-            master_data_dir="axbench/data",
-            temperature=self.config.model.sampling.judge_temperature,
-        )
-
-        self.lm_judge_evaluator = LMJudgeEvaluator(
-            model_name=self.config.model.target_model_name_or_path,
-            lm_model=lm_model,
-            concept_id=concept_id,
-        )
-        self.winrate_evaluator = WinRateEvaluator(
-            model_name=self.config.model.target_model_name_or_path,
-            lm_model=lm_model,
-            baseline_model=baseline_model,
-            concept_id=concept_id,
-        )
-
-    def evaluate_axbench(self, eval_data) -> Dict[str, float]:
-        """
-        Evaluate model performance using LMJudge and WinRate metrics
-
-        Args:
-            eval_data: pandas DataFrame containing:
-                - input_concept: concept being evaluated
-                - original_prompt: original instruction/prompt
-                - {model_name}_steered_generation: generated text from the model
-                - factor: experimental condition/factor
-                For WinRate also needs:
-                - {baseline_model}_steered_generation: generated text from baseline
-        """
-        if self.lm_judge_evaluator is None or self.winrate_evaluator is None:
-            raise ValueError(
-                "Evaluators not initialized. Call setup_evaluators() first."
-            )
-
-        # Get metrics from both evaluators
-        lm_judge_metrics = self.lm_judge_evaluator.compute_metrics(eval_data)
-        winrate_metrics = self.winrate_evaluator.compute_metrics(eval_data)
-
-        # Combine metrics
-        metrics = {"lm_judge": lm_judge_metrics, "winrate": winrate_metrics}
-
-        return metrics
+    @torch.no_grad()
+    def generate(
+        self,
+        *args,
+        **kwargs,
+    ) -> ModelOutput:
+        """Wrapper for generate method."""
+        return self.interpretor.generate(*args, **kwargs)
 
     @torch.no_grad()
-    def eval_accuracy(
+    def predict(
         self,
         test_dataloader: NamedDataLoader,
-        max_new_tokens: int = 100,
-        temperature: float = 0.7,
-        do_sample: bool = True,
     ) -> Dict[str, float]:
         """
-        Generate completions with and without intervention, then evaluate using axbench metrics
-        TODO(sid): add support for multiple inference backends
+        Compute average loss and perplexity metrics for test data.
+        Returns dict with metrics.
         """
-        from tqdm import tqdm
-
-        eval_data = []
+        total_loss = 0
+        total_perplexity = 0
+        num_batches = 0
 
         for step, batch in enumerate(
             tqdm(test_dataloader.data_loader, desc="eval steps")
         ):
             if self.max_eval_steps >= 0 and step >= self.max_eval_steps:
-                logger.debug(f"\nStopping early at {self.max_eval_steps} steps")
                 break
 
             # Move batch to GPU
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
-            try:
-                # Generate with intervention
-                full_outputs_with_intervention = self.interpretor.generate(
-                    input_ids=batch["editor_input_ids"],
-                    base_input_ids=batch.get("base_input_ids"),
-                    base_attention_mask=batch.get("base_attention_mask"),
-                    base_intervention_mask=batch.get("base_intervention_mask"),
-                    base_position_ids=batch.get("base_position_ids"),
-                    target_input_ids=batch.get("target_input_ids"),
-                    target_attention_mask=batch.get("target_attention_mask"),
-                    target_position_ids=batch.get("target_position_ids"),
-                    intervention_layers=batch.get("intervention_layers"),
-                    intervention_positions=batch.get("intervention_positions"),
-                    max_new_tokens=max_new_tokens,
-                    do_sample=do_sample,
-                    temperature=temperature,
-                    do_intervention=True,
-                )
-
-                # Truncate to only get newly generated tokens
-                input_length = batch["target_input_ids"].shape[1]
-                outputs_with_intervention = full_outputs_with_intervention[
-                    :, input_length:
-                ]
-
-                # Generate without intervention (baseline)
-                full_outputs_no_intervention = self.interpretor.generate(
-                    input_ids=batch["editor_input_ids"],
-                    target_input_ids=batch.get("target_input_ids"),
-                    target_attention_mask=batch.get("target_attention_mask"),
-                    target_position_ids=batch.get("target_position_ids"),
-                    intervention_layers=batch.get("intervention_layers"),
-                    intervention_positions=batch.get("intervention_positions"),
-                    max_new_tokens=max_new_tokens,
-                    do_sample=do_sample,
-                    temperature=temperature,
-                    do_intervention=False,  # Baseline without intervention
-                )
-
-                # Truncate baseline outputs as well
-                outputs_no_intervention = full_outputs_no_intervention[:, input_length:]
-
-                # Convert outputs to text
-                intervention_texts = self.target_model_tokenizer.batch_decode(
-                    outputs_with_intervention, skip_special_tokens=True
-                )
-                baseline_texts = self.target_model_tokenizer.batch_decode(
-                    outputs_no_intervention, skip_special_tokens=True
-                )
-                original_prompts = self.target_model_tokenizer.batch_decode(
-                    batch["target_input_ids"], skip_special_tokens=True
-                )
-                steering_concepts = self.tokenizer.batch_decode(
-                    batch["editor_input_ids"], skip_special_tokens=True
-                )
-
-                for i in range(len(intervention_texts)):
-                    eval_data.append(
-                        {
-                            "input_concept": steering_concepts[i],
-                            "original_prompt": original_prompts[i],
-                            f"{self.config.model.target_model_name_or_path}_steered_generation": intervention_texts[
-                                i
-                            ],
-                            "PromptSteering_steered_generation": baseline_texts[i],
-                        }
-                    )
-
-            except Exception as e:
-                raise e
-
-        if not eval_data:
-            raise ValueError("No successful evaluations completed")
-
-        eval_df = pd.DataFrame(eval_data)
-
-        logger.info(f"\nCompleted generation for {len(eval_data)} examples")
-
-        # Run evaluation
-        if not self.winrate_evaluator and not self.lm_judge_evaluator:
-            self.setup_evaluators(
-                judge_model=self.config.model.judge_model,
-                baseline_model=self.config.model.baseline_model,
-            )
-        metrics = self.evaluate_axbench(eval_df)
-
-        if wandb.run:
-            # Log raw evaluation data
-            wandb.log(
-                {
-                    f"{test_dataloader.name}_steering/generations": wandb.Table(
-                        dataframe=eval_df
-                    ),
-                    f"{test_dataloader.name}_steering/winrate": wandb.Table(
-                        dataframe=eval_df
-                    ),
-                }
+            # Forward pass through model
+            outputs = self.interpretor(
+                input_ids=batch["editor_input_ids"],
+                base_input_ids=batch.get("base_input_ids"),
+                base_attention_mask=batch.get("base_attention_mask"),
+                base_intervention_mask=batch.get("base_intervention_mask"),
+                target_input_ids=batch.get("target_input_ids"),
+                target_attention_mask=batch.get("target_attention_mask"),
+                target_position_ids=batch.get("target_position_ids"),
+                intervention_layers=batch.get("intervention_layers"),
+                intervention_positions=batch.get("intervention_positions"),
+                labels=batch.get("target_input_ids"),
             )
 
-            # Log metrics
-            concepts = []
-            for concept_id in eval_df["input_concept"].unique():
-                concept_data = eval_df[eval_df["input_concept"] == concept_id].iloc[0]
-                concepts.append(
-                    [
-                        concept_id,  # concept_id
-                        concept_data["input_concept"],  # concept
-                        metrics["winrate"]
-                        .get(concept_id, {})
-                        .get("win_rate"),  # winrate
-                        None,  # auc (not applicable)
-                        None,  # max_act (not applicable)
-                        concept_data["factor"],  # best_factor
-                        None,  # sae_link (not applicable)
-                    ]
-                )
+            # Get loss and perplexity
+            loss = outputs["loss"]
+            perplexity = torch.exp(loss)
 
-            wandb.log(
-                {
-                    f"{test_dataloader.name}/concept_table": wandb.Table(
-                        columns=[
-                            "concept_id",
-                            "concept",
-                            "winrate",
-                            "auc",
-                            "max_act",
-                            "best_factor",
-                            "sae_link",
-                        ],
-                        data=concepts,
-                    )
-                }
-            )
+            total_loss += loss.item()
+            total_perplexity += perplexity.item()
+            num_batches += 1
 
-            # Log LMJudge metrics
-            if "lm_judge" in metrics:
-                wandb.log(
-                    {
-                        f"{test_dataloader.name}/lm_judge/concept_relevance": metrics[
-                            "lm_judge"
-                        ]["relevance_concept_ratings"],
-                        f"{test_dataloader.name}/lm_judge/instruction_relevance": metrics[
-                            "lm_judge"
-                        ]["relevance_instruction_ratings"],
-                        f"{test_dataloader.name}/lm_judge/fluency": metrics["lm_judge"][
-                            "fluency_ratings"
-                        ],
-                        f"{test_dataloader.name}/lm_judge/aggregated": metrics[
-                            "lm_judge"
-                        ]["lm_judge_rating"],
-                    }
-                )
+        # Calculate averages
+        avg_loss = total_loss / num_batches
+        avg_perplexity = total_perplexity / num_batches
 
-            # Log Winrate metrics
-            if "winrate" in metrics:
-                wandb.log(
-                    {
-                        f"{test_dataloader.name}/winrate/win_rate": metrics[
-                            "winrate"
-                        ].get("win_rate", 0),
-                        f"{test_dataloader.name}/winrate/loss_rate": metrics[
-                            "winrate"
-                        ].get("loss_rate", 0),
-                        f"{test_dataloader.name}/winrate/tie_rate": metrics[
-                            "winrate"
-                        ].get("tie_rate", 0),
-                    }
-                )
-
-        # Log metrics to console
-        logger.info("\nEvaluation Results:")
-
-        # Log winrate metrics
-        if "winrate" in metrics:
-            winrate_metrics = metrics["winrate"]
-            logger.info(
-                "Win/Loss/Tie Rates:\n"
-                f"  Win Rate: {winrate_metrics.get('win_rate', 0):.3f}\n"
-                f"  Loss Rate: {winrate_metrics.get('loss_rate', 0):.3f}\n"
-                f"  Tie Rate: {winrate_metrics.get('tie_rate', 0):.3f}\n"
-                f"  Baseline Model: {winrate_metrics.get('baseline_model', 'N/A')}"
-            )
-
-        # Log LM Judge metrics
-        if "lm_judge" in metrics:
-            lm_metrics = metrics["lm_judge"]
-            factors = lm_metrics["factor"]
-            logger.info(
-                "LM Judge Scores:\n"
-                f"  Concept Relevance: {factors[0]}={lm_metrics['relevance_concept_ratings'][0]:.3f}, {factors[1]}={lm_metrics['relevance_concept_ratings'][1]:.3f}\n"
-                f"  Instruction Relevance: {factors[0]}={lm_metrics['relevance_instruction_ratings'][0]:.3f}, {factors[1]}={lm_metrics['relevance_instruction_ratings'][1]:.3f}\n"
-                f"  Fluency: {factors[0]}={lm_metrics['fluency_ratings'][0]:.3f}, {factors[1]}={lm_metrics['fluency_ratings'][1]:.3f}\n"
-                f"  Aggregate Score: {factors[0]}={lm_metrics['lm_judge_rating'][0]:.3f}, {factors[1]}={lm_metrics['lm_judge_rating'][1]:.3f}"
-            )
-
-        return metrics
+        return {"loss": avg_loss, "perplexity": avg_perplexity}
 
     def run_train(
         self,
@@ -1355,7 +1121,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         if cur_steps % eval_per_steps == 0:
                             metrics = {}
                             for loader in test_loader:
-                                metrics[loader.name] = self.eval_accuracy(
+                                metrics[loader.name] = self.predict(
                                     loader,
                                     max_new_tokens=self.config.model.sampling.max_new_tokens,
                                     temperature=self.config.model.sampling.temperature,
@@ -1474,7 +1240,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         if self.config.training.max_eval_steps != 0:
             result_dict = {}
             for tl in test_loader:
-                result_dict[tl.name] = self.eval_accuracy(
+                result_dict[tl.name] = self.predict(
                     tl,
                     max_new_tokens=self.config.model.sampling.max_new_tokens,
                     temperature=self.config.model.sampling.temperature,

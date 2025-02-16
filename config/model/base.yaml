@@ -25,14 +25,5 @@ epsilon: 1e-6
 hat_matrix: false
 max_length: 1024
 
-sampling:
-  max_new_tokens: 128
-  temperature: 0.7
-  do_sample: true
-  judge_temperature: 0.7
-
-judge_model: "gpt-4o-mini-2024-07-18"
-baseline_model: "PromptSteering"
-
 intepretor_type: "regular"
 hypernetwork_type: "disentangle"

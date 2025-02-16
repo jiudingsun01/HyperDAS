@@ -60,7 +60,7 @@ def run_experiment(
 
     result_dict = {}
     for inference_mode in inference_modes:
-        accs, test_loss, correct_indices = hypernetwork.eval_accuracy(
+        accs, test_loss, correct_indices = hypernetwork.predict(
             test_data_loader, inference_mode=inference_mode
         )
         if inference_mode is None:

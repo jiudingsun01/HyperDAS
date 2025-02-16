@@ -7,19 +7,19 @@ from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
 import torch
 import torch.nn as nn
 from transformers import (
+    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     LlamaConfig,
     LlamaForCausalLM,
     LlamaModel,
-    AutoConfig,
+    PreTrainedModel,
 )
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
 )
 from transformers.utils import ModelOutput
-
 
 from logger import get_logger
 
@@ -278,16 +278,8 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
     _tied_weights_keys = []
 
     def __init__(self, config: LlamaInterpretorConfig):
-        super().__init__(config)
-
-        if not config.initialize_from_scratch:
-            self.model = LlamaModelWithCrossAttention.from_pretrained(
-                config.name_or_path, torch_dtype=config.torch_dtype
-            )
-        else:
-            print("Initializing from scratch...")
-            self.model = LlamaModelWithCrossAttention._from_config(config)
-            self.model = self.model.to(dtype=config.torch_dtype)
+        # This is key to avoid initializing a useless LlamaModel in the superclass.
+        PreTrainedModel.__init__(self, config)
 
         self.lm_head = InterpretorUnembedCrossAttention(
             config=config, layer_idx=config.chop_editor_at_layer
@@ -296,127 +288,189 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         # Model parallel
         self.model_parallel = False
         self.device_map = None
-        # Initialize weights and apply final processing
-        self.post_init()
+
+        with torch.no_grad():
+            if not config.initialize_from_scratch:
+                # Initialize weights and apply final processing
+                logger.debug("Calling post_init")
+                self.post_init()
+                logger.debug("Finished post_init")
+                logger.debug("Initializing from pretrained model")
+                self.model = LlamaModelWithCrossAttention.from_pretrained(
+                    config.name_or_path, torch_dtype=config.torch_dtype
+                )
+
+                # Batch process layers that need cross attention
+                new_layers = []
+                for i, layer in enumerate(self.model.layers):
+                    if i in range(config.chop_editor_at_layer):
+                        # Create new layer and copy state dict directly
+                        new_layer = LlamaDecoderLayerWithDoubleCrossAttention(config, i)
+
+                        # Map old parameter names to new ones
+                        state_dict = layer.state_dict()
+                        new_state_dict = {}
+
+                        # Copy all weights
+                        for k, v in state_dict.items():
+                            new_state_dict[k] = v
+                            # Copy self attention weights to cross attention
+                            if "self_attn" in k:
+                                new_state_dict[k.replace("self_attn", "cross_attn")] = v
+                            # Copy MLP weights to cross attention MLP
+                            elif "mlp" in k:
+                                new_state_dict[k.replace("mlp", "cross_attn_mlp")] = v
+                            # Copy input layernorm to cross attention input layernorm
+                            elif "input_layernorm" in k:
+                                new_state_dict[
+                                    k.replace(
+                                        "input_layernorm", "cross_attn_input_layernorm"
+                                    )
+                                ] = v
+                            # Copy post attention layernorm to post cross attention layernorm
+                            elif "post_attention_layernorm" in k:
+                                new_state_dict[
+                                    k.replace(
+                                        "post_attention_layernorm",
+                                        "post_cross_attn_layernorm",
+                                    )
+                                ] = v
+
+                        # Load all weights at once
+                        new_layer.load_state_dict(new_state_dict)
+                        new_layers.append(new_layer)
+                    else:
+                        new_layers.append(layer)
+
+                self.model.layers = nn.ModuleList(new_layers)
+                logger.debug("Finished modifying layers with cross attention.")
+            else:
+                logger.debug("Initializing from scratch")
+                self.model = LlamaModelWithCrossAttention._from_config(config)
+                self.model = self.model.to(dtype=config.torch_dtype)
+
+                logger.debug("Calling post_init")
+                self.post_init()
+                logger.debug("Finished post_init")
 
         # prune layers and add cross attn heads
-        self.model.layers = self.model.layers[: config.chop_editor_at_layer]
-        cross_attn_layers = list(range(config.chop_editor_at_layer))
+        # self.model.layers = self.model.layers[: config.chop_editor_at_layer]
+        # cross_attn_layers = list(range(config.chop_editor_at_layer))
 
-        for i, layer in enumerate(self.model.layers):
-            if i not in cross_attn_layers:
-                continue
+        # for i, layer in enumerate(self.model.layers):
+        #     if i not in cross_attn_layers:
+        #         continue
 
-            self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
-                config, i
-            ).to(dtype=config.torch_dtype)
+        #     self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
+        #         config, i
+        #     ).to(dtype=config.torch_dtype)
 
-            if not config.initialize_from_scratch:
-                original_q_weights = layer.self_attn.q_proj.weight
-                original_k_weights = layer.self_attn.k_proj.weight
-                original_v_weights = layer.self_attn.v_proj.weight
-                original_o_weights = layer.self_attn.o_proj.weight
+        #     if not config.initialize_from_scratch:
+        # original_q_weights = layer.self_attn.q_proj.weight
+        # original_k_weights = layer.self_attn.k_proj.weight
+        # original_v_weights = layer.self_attn.v_proj.weight
+        # original_o_weights = layer.self_attn.o_proj.weight
 
-                original_mlp_gate_proj_weights = layer.mlp.gate_proj.weight
-                original_mlp_up_proj_weights = layer.mlp.up_proj.weight
-                original_mlp_down_proj_weights = layer.mlp.down_proj.weight
+        # original_mlp_gate_proj_weights = layer.mlp.gate_proj.weight
+        # original_mlp_up_proj_weights = layer.mlp.up_proj.weight
+        # original_mlp_down_proj_weights = layer.mlp.down_proj.weight
 
-                original_input_layernorm_weights = layer.input_layernorm.weight
-                original_post_attention_layernorm = (
-                    layer.post_attention_layernorm.weight
-                )
+        # original_input_layernorm_weights = layer.input_layernorm.weight
+        # original_post_attention_layernorm = (
+        #     layer.post_attention_layernorm.weight
+        # )
 
-                self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
-                    original_q_weights
-                )
-                self.model.layers[i].self_attn.k_proj.weight = nn.Parameter(
-                    original_k_weights
-                )
-                self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(
-                    original_v_weights
-                )
-                self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(
-                    original_o_weights
-                )
+        # self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
+        #     original_q_weights
+        # )
+        # self.model.layers[i].self_attn.k_proj.weight = nn.Parameter(
+        #     original_k_weights
+        # )
+        # self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(
+        #     original_v_weights
+        # )
+        # self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(
+        #     original_o_weights
+        # )
 
-                self.model.layers[i].cross_attn.q_proj.weight = nn.Parameter(
-                    original_q_weights
-                )
-                self.model.layers[i].cross_attn.k_proj.weight = nn.Parameter(
-                    original_k_weights
-                )
-                self.model.layers[i].cross_attn.v_proj.weight = nn.Parameter(
-                    original_v_weights
-                )
-                self.model.layers[i].cross_attn.o_proj.weight = nn.Parameter(
-                    original_o_weights
-                )
+        # self.model.layers[i].cross_attn.q_proj.weight = nn.Parameter(
+        #     original_q_weights
+        # )
+        # self.model.layers[i].cross_attn.k_proj.weight = nn.Parameter(
+        #     original_k_weights
+        # )
+        # self.model.layers[i].cross_attn.v_proj.weight = nn.Parameter(
+        #     original_v_weights
+        # )
+        # self.model.layers[i].cross_attn.o_proj.weight = nn.Parameter(
+        #     original_o_weights
+        # )
 
-                self.model.layers[i].cross_attn_input_layernorm.weight = nn.Parameter(
-                    original_input_layernorm_weights
-                )
-                self.model.layers[i].post_cross_attn_layernorm.weight = nn.Parameter(
-                    original_post_attention_layernorm
-                )
+        # self.model.layers[i].cross_attn_input_layernorm.weight = nn.Parameter(
+        #     original_input_layernorm_weights
+        # )
+        # self.model.layers[i].post_cross_attn_layernorm.weight = nn.Parameter(
+        #     original_post_attention_layernorm
+        # )
 
-                if config.attention_bias:
-                    original_q_bias = layer.self_attn.q_proj.bias
-                    original_k_bias = layer.self_attn.k_proj.bias
-                    original_v_bias = layer.self_attn.v_proj.bias
-                    original_o_bias = layer.self_attn.o_proj.bias
+        # if config.attention_bias:
+        #     original_q_bias = layer.self_attn.q_proj.bias
+        #     original_k_bias = layer.self_attn.k_proj.bias
+        #     original_v_bias = layer.self_attn.v_proj.bias
+        #     original_o_bias = layer.self_attn.o_proj.bias
 
-                    self.model.layers[i].cross_attn.q_proj.bias = nn.Parameter(
-                        original_q_bias
-                    )
-                    self.model.layers[i].cross_attn.k_proj.bias = nn.Parameter(
-                        original_k_bias
-                    )
-                    self.model.layers[i].cross_attn.v_proj.bias = nn.Parameter(
-                        original_v_bias
-                    )
-                    self.model.layers[i].cross_attn.o_proj.bias = nn.Parameter(
-                        original_o_bias
-                    )
+        #     self.model.layers[i].cross_attn.q_proj.bias = nn.Parameter(
+        #         original_q_bias
+        #     )
+        #     self.model.layers[i].cross_attn.k_proj.bias = nn.Parameter(
+        #         original_k_bias
+        #     )
+        #     self.model.layers[i].cross_attn.v_proj.bias = nn.Parameter(
+        #         original_v_bias
+        #     )
+        #     self.model.layers[i].cross_attn.o_proj.bias = nn.Parameter(
+        #         original_o_bias
+        #     )
 
-                    self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
-                        original_q_bias
-                    )
-                    self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(
-                        original_k_bias
-                    )
-                    self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(
-                        original_v_bias
-                    )
-                    self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(
-                        original_o_bias
-                    )
+        #     self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
+        #         original_q_bias
+        #     )
+        #     self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(
+        #         original_k_bias
+        #     )
+        #     self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(
+        #         original_v_bias
+        #     )
+        #     self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(
+        #         original_o_bias
+        #     )
 
-                self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(
-                    original_mlp_gate_proj_weights
-                )
-                self.model.layers[i].mlp.up_proj.weight = nn.Parameter(
-                    original_mlp_up_proj_weights
-                )
-                self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
-                    original_mlp_down_proj_weights
-                )
+        # self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(
+        #     original_mlp_gate_proj_weights
+        # )
+        # self.model.layers[i].mlp.up_proj.weight = nn.Parameter(
+        #     original_mlp_up_proj_weights
+        # )
+        # self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
+        #     original_mlp_down_proj_weights
+        # )
 
-                self.model.layers[i].cross_attn_mlp.gate_proj.weight = nn.Parameter(
-                    original_mlp_gate_proj_weights
-                )
-                self.model.layers[i].cross_attn_mlp.up_proj.weight = nn.Parameter(
-                    original_mlp_up_proj_weights
-                )
-                self.model.layers[i].cross_attn_mlp.down_proj.weight = nn.Parameter(
-                    original_mlp_down_proj_weights
-                )
+        # self.model.layers[i].cross_attn_mlp.gate_proj.weight = nn.Parameter(
+        #     original_mlp_gate_proj_weights
+        # )
+        # self.model.layers[i].cross_attn_mlp.up_proj.weight = nn.Parameter(
+        #     original_mlp_up_proj_weights
+        # )
+        # self.model.layers[i].cross_attn_mlp.down_proj.weight = nn.Parameter(
+        #     original_mlp_down_proj_weights
+        # )
 
-                self.model.layers[i].input_layernorm.weight = nn.Parameter(
-                    original_input_layernorm_weights
-                )
-                self.model.layers[i].post_attention_layernorm.weight = nn.Parameter(
-                    original_post_attention_layernorm
-                )
+        # self.model.layers[i].input_layernorm.weight = nn.Parameter(
+        #     original_input_layernorm_weights
+        # )
+        # self.model.layers[i].post_attention_layernorm.weight = nn.Parameter(
+        #     original_post_attention_layernorm
+        # )
 
     def forward(
         self,
@@ -498,6 +552,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
 
+        logger.debug("Initializing ReFT generator")
         self.reft_generator = ReFTHypernetwork(
             hidden_size=config.hidden_size,
             target_hidden_size=config.target_hidden_size,
@@ -509,11 +564,13 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             dropout=config.attention_dropout,
             dtype=config.torch_dtype,
         ).to(device)
+        logger.debug("Finished initializing ReFT generator")
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
             torch_dtype=config.torch_dtype,
             device_map={"": device},
         )
+        logger.debug("Finished loading target model")
 
         self.use_das_intervention = subspace_module is not None
         self.das_selective_subspace = subspace_module in [
@@ -547,6 +604,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
                 raise ValueError("Invalid subspace module")
 
         self.das_module = self.das_module.to(device)
+        logger.debug("Finished initializing DAS module")
 
         # freeze target model
         for param in self.target_model.parameters():

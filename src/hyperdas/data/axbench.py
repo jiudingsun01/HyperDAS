@@ -1,7 +1,10 @@
 import os
-import torch
 import random
+from typing import Literal
+
 import datasets
+import numpy as np
+import torch
 
 
 def split_axbench16k_train_test(axbench_train_set, split_by="concept", train_ratio=0.8):
@@ -180,9 +183,7 @@ def tokenize_text_inputs(
     return return_dict
 
 
-def parse_positions(positions: str, seq_len: int):
-    import numpy as np
-
+def parse_positions_varlen(positions: str, seq_len: int):
     if "+" in positions:
         first_n = int(positions.split("+")[0].strip("f"))
         last_n = int(positions.split("+")[1].strip("l"))
@@ -199,7 +200,7 @@ def parse_positions(positions: str, seq_len: int):
 def get_axbench_collate_fn(
     hypernet_tokenizer,
     target_tokenizer=None,
-    mode="steering",
+    mode: Literal["steering_train", "steering_eval", "concept"] = "steering_train",
     intervention_layers=None,
     intervention_positions=None,
 ):
@@ -208,8 +209,13 @@ def get_axbench_collate_fn(
 
         for b in batch:
             inputs.append(b["input"])
-            edit_instructions.append(b["output_concept"])
-            targets.append(b["output"])
+            edit_instructions.append(
+                b["input_concept"] if mode == "steering_eval" else b["output_concept"]
+            )
+            if mode != "steering_eval":
+                targets.append(b["output"])
+            else:
+                targets.append("")
 
         editor_input_ids = hypernet_tokenizer(
             edit_instructions, return_tensors="pt", padding=True, truncation=True
@@ -231,11 +237,13 @@ def get_axbench_collate_fn(
             returned_dict.update(target_inputs)
 
         # create intervention layer and positions
-        if mode == "steering":
+        if "steering" in mode:
             # TODO(sid): we can eventually add padding to support variable position interventions within batch
             intervention_pos = torch.tensor(
                 [
-                    parse_positions(intervention_positions or "f7+l7", len(targ_ids))
+                    parse_positions_varlen(
+                        intervention_positions or "f7+l7", len(targ_ids)
+                    )
                     for targ_ids in returned_dict["target_input_ids"]
                 ]
             )

@@ -3,6 +3,7 @@ defaults:
   - model: llama3_8b
   - dataset: city
   - training: base
+  - axbench: base
   - loss: base
   - wandb_config: base
   - experiment: null  # This should merge at root level

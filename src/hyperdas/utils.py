@@ -12,6 +12,22 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 NamedDataLoader = namedtuple("NamedDataLoader", ["name", "data_loader"])
 
 
+def calculate_perplexity(logits, input_ids, attention_mask):
+    loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+    shift_logits = logits[:, :-1, :].contiguous()
+    shift_labels = input_ids[:, 1:].contiguous()
+    shift_mask = attention_mask[:, 1:].contiguous()
+
+    token_losses = loss_fct(
+        shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
+    )
+    token_losses = token_losses.view(input_ids.size(0), -1)
+
+    seq_lengths = shift_mask.sum(dim=1)
+    seq_losses = (token_losses * shift_mask).sum(dim=1) / seq_lengths
+    return torch.exp(seq_losses)
+
+
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
