@@ -3,6 +3,7 @@
 import gc
 import os
 import random
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List
 
@@ -17,17 +18,16 @@ from hydra.utils import get_original_cwd, to_absolute_path
 from omegaconf import DictConfig
 from openai import AsyncOpenAI
 from tqdm import tqdm
-from transformers import AutoTokenizer
 
 from axbench.models.sae import load_metadata_flatten
 from axbench.scripts.evaluate import eval_steering
 from axbench.scripts.inference import (
     METADATA_FILE,
     create_data_steering,
+    load_state,
     partition_concept_ids,
     save,
     save_state,
-    load_state,
 )
 from axbench.utils.constants import CHAT_MODELS
 from axbench.utils.dataset import SteeringDatasetFactory
@@ -43,6 +43,19 @@ from src.hyperdas.utils import calculate_perplexity
 logger = get_logger(__name__)
 
 
+class InferenceModes(str, Enum):
+    PROMPT_STEERING = "PromptSteering"
+    HYPERREFT = "HyperReFT"
+
+    def __str__(self):
+        return self.value
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.value == other
+        return super().__eq__(other)
+
+
 @torch.no_grad()
 def predict_steering(
     model,
@@ -50,7 +63,7 @@ def predict_steering(
     hypernet_tokenizer,
     concept_df: pd.DataFrame,
     device: str,
-    mode: str = "steering",  # "steering" or "prompting"
+    mode: InferenceModes,
     batch_size: int = 16,
     eval_output_length: int = 100,
     temperature: float = 0.7,
@@ -67,7 +80,7 @@ def predict_steering(
         hypernet_tokenizer: Tokenizer for the hypernetwork arch
         test_dataloader: DataLoader containing test data
         device: Device to run inference on
-        mode: Whether to run in "steering" or "baseline" mode
+        mode: an InferenceModes enum value
         max_eval_steps: Maximum number of eval steps (-1 for no limit)
         max_new_tokens: Maximum number of tokens to generate
         temperature: Sampling temperature
@@ -76,8 +89,6 @@ def predict_steering(
         intervention_positions: Intervention positions
         intervention_layers: Intervention layers
     """
-    assert mode in ["steering", "prompting"], "Mode must be 'steering' or 'prompting'"
-
     all_generations = []
     all_perplexities = []
 
@@ -98,7 +109,7 @@ def predict_steering(
         batch = {k: v.to(device) for k, v in batch.items()}
 
         # Generate outputs based on mode
-        if mode == "steering":
+        if mode == InferenceModes.PROMPT_STEERING:
             outputs = model.generate(
                 input_ids=batch["editor_input_ids"],
                 base_input_ids=batch.get("base_input_ids"),
@@ -114,7 +125,7 @@ def predict_steering(
                 temperature=temperature,
                 do_intervention=True,
             )
-        else:  # baseline mode
+        elif mode == InferenceModes.HYPERREFT:
             outputs = model.generate(
                 input_ids=batch["editor_input_ids"],
                 target_input_ids=batch.get("target_input_ids"),
@@ -154,7 +165,7 @@ def predict_steering(
         all_perplexities.extend(perplexities.tolist())
 
     return {
-        f"{mode}_generation": all_generations,
+        f"{mode}_steered_generation": all_generations,
         f"{mode}_perplexity": all_perplexities,
     }
 
@@ -162,8 +173,8 @@ def predict_steering(
 def infer_steering(config, rank, world_size, device, logger):
     logger.info(f"Starting inference for rank {rank} out of {world_size}")
 
-    data_dir = config.axbench.data_dir
-    dump_dir = config.axbench.dump_dir
+    data_dir = config.axbench.inference.data_dir
+    dump_dir = config.axbench.inference.dump_dir
     num_of_examples = config.axbench.inference.steering_num_of_examples
     metadata = load_metadata_flatten(Path(data_dir) / METADATA_FILE)
     steering_factors = config.axbench.inference.steering_factors
@@ -171,7 +182,7 @@ def infer_steering(config, rank, world_size, device, logger):
 
     logger.debug(f"Loaded metadata with {len(metadata)} examples")
 
-    state = load_state(config.axbench.dump_dir, "steering", rank)
+    state = load_state(config.axbench.inference.dump_dir, "steering", rank)
     last_concept_id_processed = state.get("last_concept_id", None) if state else None
     logger.warning(
         f"Rank {rank} last concept_id processed: {last_concept_id_processed}"
@@ -212,10 +223,9 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Initialize the dataset factory with the tokenizer.
     logger.debug("Setting up tokenizers")
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.model.target_model_name_or_path, use_fast=False, model_max_length=1024
+    tokenizer = setup_tokenizer(
+        config.model.target_model_name_or_path, max_length=config.model.max_length
     )
-    tokenizer.padding_side = "right"
     # Hypernet tokenizer
     hypernet_tokenizer = setup_tokenizer(
         model_name_or_path=config.model.name_or_path, max_length=config.model.max_length
@@ -272,7 +282,7 @@ def infer_steering(config, rank, world_size, device, logger):
     for concept_id in my_concept_ids:
         logger.info(f"Processing concept {concept_id}")
         current_df, sae_link, sae_id = data_per_concept[concept_id]
-        for model_name in {"steering", "prompting"}:
+        for model_name in config.axbench.inference.models:
             logger.debug(f"Running prediction for {model_name} mode")
             # Run prediction
             results = predict_steering(
@@ -300,7 +310,7 @@ def infer_steering(config, rank, world_size, device, logger):
         )
         # After processing, save state
         current_state = {"last_concept_id": concept_id}
-        save_state(config.axbench.dump_dir, current_state, "generate", rank)
+        save_state(config.axbench.inference.dump_dir, current_state, "generate", rank)
 
     logger.info(f"Rank {rank} completed all concepts, cleaning up")
     del model_instance
@@ -308,7 +318,8 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Synchronize all processes
     logger.debug("Waiting for all processes to complete")
-    dist.barrier()
+    if dist.is_initialized():
+        dist.barrier()
 
     # Rank 0 merges results
     if rank == 0:
@@ -379,8 +390,6 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
 
 def run_eval(cfg: DictConfig):
     args = cfg.axbench.evaluate
-    args.data_dir = cfg.axbench.data_dir
-    args.dump_dir = cfg.axbench.dump_dir
     eval_steering(args)
 
 
