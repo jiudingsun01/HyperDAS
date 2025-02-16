@@ -12,7 +12,6 @@ nlprun_fast.py
 *.out
 *.log
 
-scripts/
 multirun
 
 .env
