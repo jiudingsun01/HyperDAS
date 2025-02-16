@@ -6,9 +6,9 @@ import torch.nn as nn
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
     LlamaConfig,
-    LlamaRMSNorm,
     LlamaDecoderLayer,
     LlamaMLP,
+    LlamaRMSNorm,
     apply_rotary_pos_emb,
     repeat_kv,
 )
@@ -30,7 +30,8 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
         layer_idx: Optional[int] = None,
         is_cross_attention=False,
     ):
-        super().__init__(config=config, layer_idx=layer_idx)
+        super().__init__(config, layer_idx)
+
         self.is_cross_attention = is_cross_attention
         self.num_target_model_layers = config.num_target_model_layers
 

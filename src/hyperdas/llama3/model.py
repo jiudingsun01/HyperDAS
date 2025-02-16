@@ -19,7 +19,7 @@ from logger import get_logger
 from src.hyperdas.data.axbench import parse_positions_varlen
 
 from ..das_utils import QuasiProjectiveIntervention
-from ..utils import InterpretorModelOutput, NamedDataLoader
+from ..utils import InterpretorModelOutput, NamedDataLoader, init_on_device
 from .modules import (
     LlamaInterpretor,
     LlamaInterpretorConfig,
@@ -89,10 +89,17 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
             self.interpretor.hypernetwork.state_dict(),
             os.path.join(save_dir, "hypernetwork.pt"),
         )
+        torch.save(
+            self.interpretor.das_module.state_dict(),
+            os.path.join(save_dir, "intervenable.pt"),
+        )
 
     def load_model(self, load_dir):
         self.interpretor.hypernetwork.load_state_dict(
             torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
+        )
+        self.interpretor.das_module.load_state_dict(
+            torch.load(os.path.join(load_dir, "intervenable.pt"), weights_only=True)
         )
 
     @abstractmethod
@@ -146,13 +153,15 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
         if interpretor_cls is None:
             raise ValueError("Invalid interpretor type")
-        self.interpretor = interpretor_cls(
-            self.interpretor_config,
-            target_model_name_or_path=config.model.target_model_name_or_path,
-            subspace_module=config.model.subspace_module,
-            compute_metrics=config.training.compute_metrics,
-            device=self.device,
-        )
+
+        with init_on_device(self.device):
+            self.interpretor = interpretor_cls(
+                self.interpretor_config,
+                target_model_name_or_path=config.model.target_model_name_or_path,
+                subspace_module=config.model.subspace_module,
+                compute_metrics=config.training.compute_metrics,
+                device=self.device,
+            )
 
         # DAS configs
         self.use_das_intervention = config.model.subspace_module is not None
@@ -914,13 +923,15 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
         if interpretor_cls is None:
             raise ValueError("Invalid interpretor type")
-        self.interpretor = interpretor_cls(
-            self.interpretor_config,
-            target_model_name_or_path=config.model.target_model_name_or_path,
-            subspace_module=config.model.subspace_module,
-            compute_metrics=config.training.compute_metrics,
-            device=self.device,
-        )
+
+        with init_on_device(self.device):
+            self.interpretor = interpretor_cls(
+                self.interpretor_config,
+                target_model_name_or_path=config.model.target_model_name_or_path,
+                subspace_module=config.model.subspace_module,
+                compute_metrics=config.training.compute_metrics,
+                device=self.device,
+            )
 
         self.lm_judge_evaluator = None
         self.winrate_evaluator = None
@@ -1030,7 +1041,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
             # Forward pass through model
             outputs = self.interpretor(
-                input_ids=batch["editor_input_ids"],
+                editor_input_ids=batch["editor_input_ids"],
                 base_input_ids=batch.get("base_input_ids"),
                 base_attention_mask=batch.get("base_attention_mask"),
                 base_intervention_mask=batch.get("base_intervention_mask"),
@@ -1121,12 +1132,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         if cur_steps % eval_per_steps == 0:
                             metrics = {}
                             for loader in test_loader:
-                                metrics[loader.name] = self.predict(
-                                    loader,
-                                    max_new_tokens=self.config.model.sampling.max_new_tokens,
-                                    temperature=self.config.model.sampling.temperature,
-                                    do_sample=self.config.model.sampling.do_sample,
-                                )
+                                metrics[loader.name] = self.predict(loader)
 
                             # Dump to json file
                             if save_dir is not None:
@@ -1240,12 +1246,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         if self.config.training.max_eval_steps != 0:
             result_dict = {}
             for tl in test_loader:
-                result_dict[tl.name] = self.predict(
-                    tl,
-                    max_new_tokens=self.config.model.sampling.max_new_tokens,
-                    temperature=self.config.model.sampling.temperature,
-                    do_sample=self.config.model.sampling.do_sample,
-                )
+                result_dict[tl.name] = self.predict(tl)
 
         # Save the final model
         if save_model and save_dir:

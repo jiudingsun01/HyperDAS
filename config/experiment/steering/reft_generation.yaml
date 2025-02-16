@@ -1,22 +1,22 @@
 defaults:
-  - /model/tinyllama_gemma2b_reft
-  - /dataset/concept10_2b_l10
+  - /model/llama3_8b_gemma2b_reft
+  - /dataset/concept500_2b_l10
   - /training/base
   - /loss/base
   - /wandb_config/base
   - _self_
 
 training:
-  n_epochs: 1
-  n_steps: 500
+  n_epochs: 5
   eval_per_steps: 100
   save_model: true
   debug_model: true
-  train_batch_size: 16
+  train_batch_size: 8
+  test_batch_size: 16
 
 loss:
   return_penalty: false
 
 wandb_config:
   project: HyperReFT_Steering
-  group: llama38b_gemma2b_hyperloreft_steer
+  run_name: llama38b_gemma2b_hyperloreft_steer

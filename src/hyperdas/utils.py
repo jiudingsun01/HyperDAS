@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import namedtuple
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,17 @@ from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 
 NamedDataLoader = namedtuple("NamedDataLoader", ["name", "data_loader"])
+
+
+@contextmanager
+def init_on_device(device):
+    """Context manager that forces model initialization directly on the specified device."""
+    original_device = torch.empty(1).device
+    torch.set_default_device(device)
+    try:
+        yield
+    finally:
+        torch.set_default_device(original_device)
 
 
 def calculate_perplexity(logits, input_ids, attention_mask):

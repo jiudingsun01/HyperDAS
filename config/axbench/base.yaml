@@ -66,7 +66,7 @@ evaluate:
   winrate_baseline: "PromptSteering"
   # master data dir is shared across all jobs.
   master_data_dir: "experiments/axbench/data"
-  data_dir: assets/data/axbench/test_concept10
+  data_dir: assets/data/axbench/test_concept10/inference
   dump_dir: assets/data/axbench/test_concept10
   report_to: null
   wandb_name: null

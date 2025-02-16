@@ -49,8 +49,9 @@ def run_experiment(
         config.model.inference_modes.append(None)
 
     config.wandb_config.run_name = (
-        config.wandb_config.run_name
-        or f"{config.model.subspace_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        f"{config.wandb_config.run_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        if config.wandb_config.run_name
+        else f"{config.model.subspace_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
 
     if config.wandb_config.log:

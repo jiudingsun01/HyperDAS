@@ -200,6 +200,8 @@ class LlamaModelWithCrossAttention(LlamaModel):
             output_attentions=True,
         )
 
+        breakpoint()
+
         # embed positions
         hidden_states = inputs_embeds
 
@@ -277,13 +279,23 @@ class LlamaModelWithCrossAttention(LlamaModel):
 class LlamaInterpretorHypernetwork(LlamaForCausalLM):
     _tied_weights_keys = []
 
-    def __init__(self, config: LlamaInterpretorConfig):
+    def __init__(self, config: LlamaInterpretorConfig, device):
         # This is key to avoid initializing a useless LlamaModel in the superclass.
         PreTrainedModel.__init__(self, config)
 
         self.lm_head = InterpretorUnembedCrossAttention(
-            config=config, layer_idx=config.chop_editor_at_layer
-        ).to(dtype=config.torch_dtype)
+            config=config,
+            layer_idx=config.chop_editor_at_layer,
+        )
+
+        if config.target_hidden_size != config.hidden_size:
+            self.target_adapter = nn.Linear(
+                config.target_hidden_size,
+                config.hidden_size,
+                dtype=config.torch_dtype,
+            )
+        else:
+            self.target_adapter = None
 
         # Model parallel
         self.model_parallel = False
@@ -295,7 +307,9 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 logger.debug("Calling post_init")
                 self.post_init()
                 logger.debug("Finished post_init")
+
                 logger.debug("Initializing from pretrained model")
+
                 self.model = LlamaModelWithCrossAttention.from_pretrained(
                     config.name_or_path, torch_dtype=config.torch_dtype
                 )
@@ -305,7 +319,9 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 for i, layer in enumerate(self.model.layers):
                     if i in range(config.chop_editor_at_layer):
                         # Create new layer and copy state dict directly
-                        new_layer = LlamaDecoderLayerWithDoubleCrossAttention(config, i)
+                        new_layer = LlamaDecoderLayerWithDoubleCrossAttention(
+                            config, i
+                        ).to(dtype=config.torch_dtype)
 
                         # Map old parameter names to new ones
                         state_dict = layer.state_dict()
@@ -346,131 +362,13 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 logger.debug("Finished modifying layers with cross attention.")
             else:
                 logger.debug("Initializing from scratch")
-                self.model = LlamaModelWithCrossAttention._from_config(config)
-                self.model = self.model.to(dtype=config.torch_dtype)
+                self.model = LlamaModelWithCrossAttention._from_config(
+                    config, torch_dtype=config.torch_dtype
+                )
 
                 logger.debug("Calling post_init")
                 self.post_init()
                 logger.debug("Finished post_init")
-
-        # prune layers and add cross attn heads
-        # self.model.layers = self.model.layers[: config.chop_editor_at_layer]
-        # cross_attn_layers = list(range(config.chop_editor_at_layer))
-
-        # for i, layer in enumerate(self.model.layers):
-        #     if i not in cross_attn_layers:
-        #         continue
-
-        #     self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
-        #         config, i
-        #     ).to(dtype=config.torch_dtype)
-
-        #     if not config.initialize_from_scratch:
-        # original_q_weights = layer.self_attn.q_proj.weight
-        # original_k_weights = layer.self_attn.k_proj.weight
-        # original_v_weights = layer.self_attn.v_proj.weight
-        # original_o_weights = layer.self_attn.o_proj.weight
-
-        # original_mlp_gate_proj_weights = layer.mlp.gate_proj.weight
-        # original_mlp_up_proj_weights = layer.mlp.up_proj.weight
-        # original_mlp_down_proj_weights = layer.mlp.down_proj.weight
-
-        # original_input_layernorm_weights = layer.input_layernorm.weight
-        # original_post_attention_layernorm = (
-        #     layer.post_attention_layernorm.weight
-        # )
-
-        # self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
-        #     original_q_weights
-        # )
-        # self.model.layers[i].self_attn.k_proj.weight = nn.Parameter(
-        #     original_k_weights
-        # )
-        # self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(
-        #     original_v_weights
-        # )
-        # self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(
-        #     original_o_weights
-        # )
-
-        # self.model.layers[i].cross_attn.q_proj.weight = nn.Parameter(
-        #     original_q_weights
-        # )
-        # self.model.layers[i].cross_attn.k_proj.weight = nn.Parameter(
-        #     original_k_weights
-        # )
-        # self.model.layers[i].cross_attn.v_proj.weight = nn.Parameter(
-        #     original_v_weights
-        # )
-        # self.model.layers[i].cross_attn.o_proj.weight = nn.Parameter(
-        #     original_o_weights
-        # )
-
-        # self.model.layers[i].cross_attn_input_layernorm.weight = nn.Parameter(
-        #     original_input_layernorm_weights
-        # )
-        # self.model.layers[i].post_cross_attn_layernorm.weight = nn.Parameter(
-        #     original_post_attention_layernorm
-        # )
-
-        # if config.attention_bias:
-        #     original_q_bias = layer.self_attn.q_proj.bias
-        #     original_k_bias = layer.self_attn.k_proj.bias
-        #     original_v_bias = layer.self_attn.v_proj.bias
-        #     original_o_bias = layer.self_attn.o_proj.bias
-
-        #     self.model.layers[i].cross_attn.q_proj.bias = nn.Parameter(
-        #         original_q_bias
-        #     )
-        #     self.model.layers[i].cross_attn.k_proj.bias = nn.Parameter(
-        #         original_k_bias
-        #     )
-        #     self.model.layers[i].cross_attn.v_proj.bias = nn.Parameter(
-        #         original_v_bias
-        #     )
-        #     self.model.layers[i].cross_attn.o_proj.bias = nn.Parameter(
-        #         original_o_bias
-        #     )
-
-        #     self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
-        #         original_q_bias
-        #     )
-        #     self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(
-        #         original_k_bias
-        #     )
-        #     self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(
-        #         original_v_bias
-        #     )
-        #     self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(
-        #         original_o_bias
-        #     )
-
-        # self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(
-        #     original_mlp_gate_proj_weights
-        # )
-        # self.model.layers[i].mlp.up_proj.weight = nn.Parameter(
-        #     original_mlp_up_proj_weights
-        # )
-        # self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
-        #     original_mlp_down_proj_weights
-        # )
-
-        # self.model.layers[i].cross_attn_mlp.gate_proj.weight = nn.Parameter(
-        #     original_mlp_gate_proj_weights
-        # )
-        # self.model.layers[i].cross_attn_mlp.up_proj.weight = nn.Parameter(
-        #     original_mlp_up_proj_weights
-        # )
-        # self.model.layers[i].cross_attn_mlp.down_proj.weight = nn.Parameter(
-        #     original_mlp_down_proj_weights
-        # )
-
-        # self.model.layers[i].input_layernorm.weight = nn.Parameter(
-        #     original_input_layernorm_weights
-        # )
-        # self.model.layers[i].post_attention_layernorm.weight = nn.Parameter(
-        #     original_post_attention_layernorm
-        # )
 
     def forward(
         self,
@@ -500,6 +398,9 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             and self.config.compute_position_ids
         ):
             position_ids = attention_mask.cumsum(-1)
+
+        if self.target_adapter is not None:
+            inputs_embeds = self.target_adapter(inputs_embeds)
 
         transformer_outputs = self.model(
             input_ids,
@@ -550,7 +451,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
 
-        self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+        self.hypernetwork = LlamaInterpretorHypernetwork(config, device)
 
         logger.debug("Initializing ReFT generator")
         self.reft_generator = ReFTHypernetwork(
@@ -563,7 +464,13 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             rms_norm_eps=config.rms_norm_eps,
             dropout=config.attention_dropout,
             dtype=config.torch_dtype,
-        ).to(device)
+        )
+        self.hypernetwork_adapter = nn.Linear(
+            config.target_hidden_size,
+            config.hidden_size,
+            dtype=config.torch_dtype,
+        )
+
         logger.debug("Finished initializing ReFT generator")
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
@@ -603,7 +510,6 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             else:
                 raise ValueError("Invalid subspace module")
 
-        self.das_module = self.das_module.to(device)
         logger.debug("Finished initializing DAS module")
 
         # freeze target model
@@ -863,6 +769,12 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
         editor_input_ids = None
 
+        # Project target states to compatibility with hypernet hidden size\
+        if self.config.target_hidden_size != self.config.hidden_size:
+            collapsed_base_hidden_states = self.hypernetwork_adapter(
+                collapsed_base_hidden_states
+            )
+
         layer_hidden_states = []
         intervention_layer_list = intervention_layers.cpu().tolist()
         for layer_idx in intervention_layer_list:
@@ -955,7 +867,7 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
         self.config = config
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
-        self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+        self.hypernetwork = LlamaInterpretorHypernetwork(config)
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
             torch_dtype=config.torch_dtype,
@@ -994,8 +906,6 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
                 )
             else:
                 raise ValueError("Invalid subspace module")
-
-        self.das_module = self.das_module.to(device)
 
         # freeze target model
         for param in self.target_model.parameters():
