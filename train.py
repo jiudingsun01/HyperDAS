@@ -13,6 +13,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
+from transformers import AutoConfig
 
 import wandb
 from logger import get_logger
@@ -79,6 +80,9 @@ def run_experiment(
         )
     else:
         target_tokenizer = hypernet_tokenizer
+        hypernet_model_cfg = AutoConfig.from_pretrained(config.model.name_or_path)
+        config.model.target_hidden_size = hypernet_model_cfg.hidden_size
+        config.model.target_model_name_or_path = config.model.name_or_path
 
     train_set = load_wrapper(config.dataset.train_path, split="train")
 

@@ -1,5 +1,5 @@
 defaults:
-  - /model/llama3_8b_gemma2b_reft
+  - /model/tinyllama_gemma2b_reft
   - /dataset/concept500_2b_l10
   - /training/base
   - /loss/base
@@ -11,8 +11,12 @@ training:
   eval_per_steps: 100
   save_model: true
   debug_model: true
-  train_batch_size: 8
+  train_batch_size: 2
   test_batch_size: 16
+
+model:
+  max_length: 128
+  das_dimension: 1
 
 loss:
   return_penalty: false

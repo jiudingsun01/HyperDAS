@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
-
+import warnings
 import torch
 import torch.nn as nn
 from transformers import (
@@ -83,7 +83,11 @@ class HyperDASModelOutputWithCrossAttentions(BaseModelOutputWithPast):
     """
 
     last_hidden_state: torch.FloatTensor = None
+    last_source_hidden_state: torch.FloatTensor = None
+    last_base_hidden_state: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    source_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    base_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
 
@@ -132,6 +136,8 @@ class LlamaModelWithCrossAttention(LlamaModel):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        source_encoder_hidden_states: Optional[torch.Tensor] = None,
+        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         base_encoder_hidden_states: Optional[torch.Tensor] = None,
         base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
@@ -142,7 +148,7 @@ class LlamaModelWithCrossAttention(LlamaModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
-    ) -> Union[Tuple[torch.Tensor, ...], BaseModelOutputWithPast]:
+    ) -> Union[Tuple]:
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -200,25 +206,33 @@ class LlamaModelWithCrossAttention(LlamaModel):
             output_attentions=True,
         )
 
-        breakpoint()
-
         # embed positions
         hidden_states = inputs_embeds
+        base_hidden_states = inputs_embeds
+        source_hidden_states = inputs_embeds
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
+        all_base_hidden_states = () if output_hidden_states else None
+        all_source_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
         for decoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
+                all_base_hidden_states += (base_hidden_states,)
+                all_source_hidden_states += (source_hidden_states,)
 
             if self.gradient_checkpointing and self.training:
                 layer_outputs = self._gradient_checkpointing_func(
                     decoder_layer.__call__,
                     hidden_states,
+                    source_hidden_states,
+                    base_hidden_states,
                     causal_mask,
+                    source_encoder_hidden_states,
+                    source_encoder_attention_mask,
                     base_encoder_hidden_states,
                     base_encoder_attention_mask,
                     position_ids,
@@ -230,7 +244,11 @@ class LlamaModelWithCrossAttention(LlamaModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
+                    source_hidden_states=source_hidden_states,
+                    base_hidden_states=base_hidden_states,
                     attention_mask=causal_mask,
+                    source_encoder_hidden_states=source_encoder_hidden_states,
+                    source_encoder_attention_mask=source_encoder_attention_mask,
                     base_encoder_hidden_states=base_encoder_hidden_states,
                     base_encoder_attention_mask=base_encoder_attention_mask,
                     position_ids=position_ids,
@@ -240,7 +258,11 @@ class LlamaModelWithCrossAttention(LlamaModel):
                     cache_position=cache_position,
                 )
 
-            hidden_states = layer_outputs[0]
+            hidden_states, base_hidden_states, source_hidden_states = (
+                layer_outputs[0],
+                layer_outputs[1],
+                layer_outputs[2],
+            )
 
             if use_cache:
                 next_decoder_cache = layer_outputs[4 if output_attentions else 3]
@@ -249,10 +271,14 @@ class LlamaModelWithCrossAttention(LlamaModel):
                 all_self_attns += (layer_outputs[3],)
 
         hidden_states = self.norm(hidden_states)
+        source_hidden_states = self.norm(source_hidden_states)
+        base_hidden_states = self.norm(base_hidden_states)
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
+            all_source_hidden_states += (source_hidden_states,)
+            all_base_hidden_states += (base_hidden_states,)
 
         next_cache = None
         if use_cache:
@@ -270,8 +296,12 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
         return HyperDASModelOutputWithCrossAttentions(
             last_hidden_state=hidden_states,
+            last_source_hidden_state=source_hidden_states,
+            last_base_hidden_state=base_hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
+            source_hidden_states=all_source_hidden_states,
+            base_hidden_states=all_base_hidden_states,
             attentions=all_self_attns,
         )
 
@@ -279,14 +309,14 @@ class LlamaModelWithCrossAttention(LlamaModel):
 class LlamaInterpretorHypernetwork(LlamaForCausalLM):
     _tied_weights_keys = []
 
-    def __init__(self, config: LlamaInterpretorConfig, device):
+    def __init__(self, config: LlamaInterpretorConfig):
         # This is key to avoid initializing a useless LlamaModel in the superclass.
         PreTrainedModel.__init__(self, config)
 
         self.lm_head = InterpretorUnembedCrossAttention(
             config=config,
             layer_idx=config.chop_editor_at_layer,
-        )
+        ).to(dtype=config.torch_dtype)
 
         if config.target_hidden_size != config.hidden_size:
             self.target_adapter = nn.Linear(
@@ -314,51 +344,54 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                     config.name_or_path, torch_dtype=config.torch_dtype
                 )
 
-                # Batch process layers that need cross attention
-                new_layers = []
+                # prune layers and add cross attn heads
+                self.model.layers = self.model.layers[
+                    : self.config.chop_editor_at_layer
+                ]
+                cross_attn_layers = list(range(self.config.chop_editor_at_layer))
+
                 for i, layer in enumerate(self.model.layers):
-                    if i in range(config.chop_editor_at_layer):
-                        # Create new layer and copy state dict directly
-                        new_layer = LlamaDecoderLayerWithDoubleCrossAttention(
-                            config, i
-                        ).to(dtype=config.torch_dtype)
+                    if i not in cross_attn_layers:
+                        continue
 
-                        # Map old parameter names to new ones
-                        state_dict = layer.state_dict()
-                        new_state_dict = {}
+                    # Create new layer with double cross attention
+                    self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
+                        self.config, i
+                    ).to(dtype=self.config.torch_dtype)
 
-                        # Copy all weights
-                        for k, v in state_dict.items():
-                            new_state_dict[k] = v
-                            # Copy self attention weights to cross attention
-                            if "self_attn" in k:
-                                new_state_dict[k.replace("self_attn", "cross_attn")] = v
-                            # Copy MLP weights to cross attention MLP
-                            elif "mlp" in k:
-                                new_state_dict[k.replace("mlp", "cross_attn_mlp")] = v
-                            # Copy input layernorm to cross attention input layernorm
-                            elif "input_layernorm" in k:
-                                new_state_dict[
-                                    k.replace(
-                                        "input_layernorm", "cross_attn_input_layernorm"
-                                    )
-                                ] = v
-                            # Copy post attention layernorm to post cross attention layernorm
-                            elif "post_attention_layernorm" in k:
-                                new_state_dict[
-                                    k.replace(
-                                        "post_attention_layernorm",
-                                        "post_cross_attn_layernorm",
-                                    )
-                                ] = v
+                    # Copy original weights
+                    def copy_weights(src_module, dst_module):
+                        for name, param in src_module.named_parameters():
+                            if hasattr(dst_module, name):
+                                setattr(dst_module, name, nn.Parameter(param.data))
 
-                        # Load all weights at once
-                        new_layer.load_state_dict(new_state_dict)
-                        new_layers.append(new_layer)
-                    else:
-                        new_layers.append(layer)
+                    # Copy attention weights
+                    copy_weights(layer.self_attn, self.model.layers[i].self_attn)
+                    copy_weights(layer.self_attn, self.model.layers[i].cross_attn)
 
-                self.model.layers = nn.ModuleList(new_layers)
+                    # Copy MLP weights
+                    copy_weights(layer.mlp, self.model.layers[i].mlp)
+                    copy_weights(layer.mlp, self.model.layers[i].cross_attn_mlp)
+
+                    # Copy layer norms
+                    copy_weights(
+                        layer.input_layernorm, self.model.layers[i].input_layernorm
+                    )
+                    copy_weights(
+                        layer.post_attention_layernorm,
+                        self.model.layers[i].post_attention_layernorm,
+                    )
+                    self.model.layers[
+                        i
+                    ].cross_attn_input_layernorm.weight = nn.Parameter(
+                        layer.input_layernorm.weight.data
+                    )
+                    self.model.layers[
+                        i
+                    ].post_cross_attn_layernorm.weight = nn.Parameter(
+                        layer.post_attention_layernorm.weight.data
+                    )
+
                 logger.debug("Finished modifying layers with cross attention.")
             else:
                 logger.debug("Initializing from scratch")
@@ -379,11 +412,13 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         base_encoder_hidden_states: Optional[torch.Tensor] = None,
         base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        source_encoder_hidden_states: Optional[torch.Tensor] = None,
+        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Union[Tuple]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
@@ -410,30 +445,51 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             inputs_embeds=inputs_embeds,
             base_encoder_hidden_states=base_encoder_hidden_states,
             base_encoder_attention_mask=base_encoder_attention_mask,
+            source_encoder_hidden_states=source_encoder_hidden_states,
+            source_encoder_attention_mask=source_encoder_attention_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        hidden_states = transformer_outputs[0]
+        hidden_states, base_hidden_states, source_hidden_states = (
+            transformer_outputs[0],
+            transformer_outputs[1],
+            transformer_outputs[2],
+        )
 
         # Set device for model parallelism
         if self.model_parallel:
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
+            base_hidden_states = base_hidden_states.to(self.lm_head.weight.device)
+            source_hidden_states = source_hidden_states.to(self.lm_head.weight.device)
+
+        if (
+            source_hidden_states is not None
+            and source_encoder_hidden_states is not None
+            and source_encoder_attention_mask is not None
+        ):
+            source_attn_weight = self.lm_head(
+                source_hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=source_encoder_hidden_states,
+                encoder_attention_mask=source_encoder_attention_mask,
+                output_attentions=output_attentions,
+            )
+        else:
+            source_attn_weight = None
 
         base_attn_weight = self.lm_head(
-            hidden_states,
+            base_hidden_states,
             attention_mask=attention_mask,
             encoder_hidden_states=base_encoder_hidden_states,
             encoder_attention_mask=base_encoder_attention_mask,
             output_attentions=output_attentions,
         )
 
-        # (output, present[,attentions])
-        return hidden_states, base_attn_weight
-        # return base_hidden_states, source_attn_weight, base_attn_weight
+        return hidden_states, source_attn_weight, base_attn_weight
 
 
 class LlamaInterpretorForReFTGeneration(nn.Module):
@@ -451,7 +507,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
 
-        self.hypernetwork = LlamaInterpretorHypernetwork(config, device)
+        self.hypernetwork = LlamaInterpretorHypernetwork(config)
 
         logger.debug("Initializing ReFT generator")
         self.reft_generator = ReFTHypernetwork(
@@ -769,7 +825,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
         editor_input_ids = None
 
-        # Project target states to compatibility with hypernet hidden size\
+        # Project target states to compatibility with hypernet hidden size
         if self.config.target_hidden_size != self.config.hidden_size:
             collapsed_base_hidden_states = self.hypernetwork_adapter(
                 collapsed_base_hidden_states
@@ -1130,14 +1186,13 @@ class LlamaInterpretor(nn.Module):
         config: LlamaInterpretorConfig,
         target_model_name_or_path,
         subspace_module=None,
-        das_dimension=None,
         compute_metrics=False,
         device="cuda",
     ):
         super().__init__()
 
         self.config = config
-        self.hypernetwork = LlamaInterpretorHypernetwork(config).to(device)
+        self.hypernetwork = LlamaInterpretorHypernetwork(config)
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
         self.target_model = AutoModelForCausalLM.from_pretrained(
@@ -1165,21 +1220,21 @@ class LlamaInterpretor(nn.Module):
             elif subspace_module == "DAS":
                 self.das_module = LowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    low_rank_dimension=das_dimension,
+                    low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "MaskSelect":
                 self.das_module = SelectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    low_rank_dimension=das_dimension,
+                    low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "ReflectSelect":
                 self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    low_rank_dimension=das_dimension,
+                    low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
@@ -1188,7 +1243,7 @@ class LlamaInterpretor(nn.Module):
                     embed_dim=self.target_model.config.hidden_size,
                     dict_size=config.dict_size,
                     scoring_dimension=config.scoring_dimension,
-                    top_k_parameter=das_dimension,
+                    top_k_parameter=config.das_dimension,
                     lambda_parameter=config.lambda_parameter,
                     importance_power=config.importance_power,
                     epsilon=config.epsilon,
@@ -1236,9 +1291,9 @@ class LlamaInterpretor(nn.Module):
     @torch.no_grad()
     def _run_target_model_for_encoded_hidden_states(
         self,
-        target_input_ids: torch.Tensor,
-        target_attention_mask: torch.Tensor,
-        position_ids: torch.Tensor = None,
+        target_input_ids: torch.LongTensor,
+        target_attention_mask: torch.FloatTensor,
+        position_ids: Optional[torch.LongTensor] = None,
     ):
         """Gets the hidden states from the target model, if necessary"""
 
@@ -1261,35 +1316,23 @@ class LlamaInterpretor(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: Optional[torch.Tensor] = None,
-        editor_attention_mask: Optional[torch.Tensor] = None,
-        base_input_ids: Optional[torch.Tensor] = None,
-        base_attention_mask: Optional[torch.Tensor] = None,
-        base_intervention_mask: Optional[torch.Tensor] = None,
-        source_input_ids: Optional[torch.Tensor] = None,
-        source_attention_mask: Optional[torch.Tensor] = None,
-        source_intervention_mask: Optional[torch.Tensor] = None,
-        base_hidden_states: Optional[torch.Tensor] = None,
-        base_position_ids: Optional[torch.Tensor] = None,
-        source_hidden_states: Optional[torch.Tensor] = None,
-        source_position_ids: Optional[torch.Tensor] = None,
+        editor_input_ids: Optional[torch.LongTensor] = None,
+        editor_attention_mask: Optional[torch.FloatTensor] = None,
+        base_input_ids: Optional[torch.LongTensor] = None,
+        base_attention_mask: Optional[torch.FloatTensor] = None,
+        base_intervention_mask: Optional[torch.FloatTensor] = None,
+        source_input_ids: Optional[torch.LongTensor] = None,
+        source_attention_mask: Optional[torch.FloatTensor] = None,
+        source_intervention_mask: Optional[torch.FloatTensor] = None,
+        base_hidden_states: Optional[torch.FloatTensor] = None,
+        base_position_ids: Optional[torch.LongTensor] = None,
+        source_hidden_states: Optional[torch.FloatTensor] = None,
+        source_position_ids: Optional[torch.LongTensor] = None,
         intervention_layer: Optional[int] = None,
-        output_vanilla_hidden_states: bool = True,
-        output_edited_hidden_states: bool = False,
         output_intervention_weight: bool = True,
-        intervention_weight: Optional[torch.Tensor] = None,
-        inference_mode: Optional[
-            Literal["column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
-        ] = None,
+        source_intervention_weight: Optional[torch.FloatTensor] = None,
+        base_intervention_weight: Optional[torch.FloatTensor] = None,
     ) -> InterpretorModelOutput:
-        assert inference_mode in [
-            None,
-            "column_argmax",
-            "global_argmax",
-            "groundtruth",
-            "bidding_argmax",
-        ]
-
         if intervention_layer is None:
             intervention_layer = self.config.intervention_layer
 
@@ -1343,127 +1386,78 @@ class LlamaInterpretor(nn.Module):
         source_normalization_factors = source_hidden_states.norm(dim=-1, keepdim=True)
         source_hidden_states = source_hidden_states / source_normalization_factors
 
-        if intervention_weight is None or inference_mode == "groundtruth":
-            n_layer = base_hidden_states.shape[2]
+        if (source_intervention_mask.sum(dim=-1) == 0).any():
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
+            zero_row_idx = (source_intervention_mask.sum(dim=-1) == 0).nonzero(
+                as_tuple=True
+            )[0]
+            warning_msg = (
+                "source_intervention_mask has zero row\n"
+                f"IDs: {source_input_ids[zero_row_idx]}, Indices: {zero_row_idx}\n"
+                f"Full sentence: {tokenizer.decode(source_input_ids[zero_row_idx][0])}\n"
+                f"Attention mask: {source_attention_mask[zero_row_idx][0]}\n"
+                f"Intervention mask: {source_intervention_mask[zero_row_idx][0]}"
+            )
+            warnings.warn(warning_msg)
 
-            collapsed_base_hidden_states = base_hidden_states.reshape(
-                base_hidden_states.shape[0],
-                base_hidden_states.shape[1] * base_hidden_states.shape[2],
-                base_hidden_states.shape[3],
+        if (base_intervention_mask.sum(dim=-1) == 0).any():
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
+            zero_row_idx = (base_intervention_mask.sum(dim=-1) == 0).nonzero(
+                as_tuple=True
+            )[0]
+            warning_msg = (
+                "base_intervention_mask has zero row\n"
+                f"IDs: {base_input_ids[zero_row_idx]}, Indices: {zero_row_idx}\n"
+                f"Full sentence: {tokenizer.decode(base_input_ids[zero_row_idx][0])}\n"
+                f"Attention mask: {base_attention_mask[zero_row_idx][0]}\n"
+                f"Intervention mask: {base_intervention_mask[zero_row_idx][0]}"
             )
+            warnings.warn(warning_msg)
 
-            collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(
-                1, 1, n_layer
-            )
-            collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
-                base_intervention_mask.shape[0],
-                base_intervention_mask.shape[1] * n_layer,
-            )
+        n_layer = base_hidden_states.shape[2]
 
-            collapsed_source_hidden_states = source_hidden_states.reshape(
-                source_hidden_states.shape[0],
-                source_hidden_states.shape[1] * source_hidden_states.shape[2],
-                source_hidden_states.shape[3],
-            )
+        collapsed_base_hidden_states = base_hidden_states.reshape(
+            base_hidden_states.shape[0],
+            base_hidden_states.shape[1] * base_hidden_states.shape[2],
+            base_hidden_states.shape[3],
+        )
 
-            collapsed_source_attention_mask = source_intervention_mask.unsqueeze(
-                -1
-            ).repeat(1, 1, n_layer)
-            collapsed_source_attention_mask = collapsed_source_attention_mask.reshape(
-                source_intervention_mask.shape[0],
-                source_intervention_mask.shape[1] * n_layer,
-            )
+        collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(
+            1, 1, n_layer
+        )
+        collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
+            base_intervention_mask.shape[0],
+            base_intervention_mask.shape[1] * n_layer,
+        )
 
-            inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
-            editor_input_ids = None
+        collapsed_source_hidden_states = source_hidden_states.reshape(
+            source_hidden_states.shape[0],
+            source_hidden_states.shape[1] * source_hidden_states.shape[2],
+            source_hidden_states.shape[3],
+        )
 
-            interpretor_output = self.hypernetwork(
-                input_ids=editor_input_ids,
-                inputs_embeds=inputs_embeds,
-                attention_mask=editor_attention_mask,
-                base_hidden_states=collapsed_base_hidden_states,
-                base_attention_mask=collapsed_base_attention_mask,
-                source_hidden_states=collapsed_source_hidden_states,
-                source_attention_mask=collapsed_source_attention_mask,
-                use_cache=False,
-            )
+        collapsed_source_attention_mask = source_intervention_mask.unsqueeze(-1).repeat(
+            1, 1, n_layer
+        )
+        collapsed_source_attention_mask = collapsed_source_attention_mask.reshape(
+            source_intervention_mask.shape[0],
+            source_intervention_mask.shape[1] * n_layer,
+        )
 
-            if inference_mode == "groundtruth":
-                hypernet_hidden_states, _ = interpretor_output
-                intervention_weight = intervention_weight.to(
-                    dtype=hypernet_hidden_states.dtype
-                )
-            else:
-                # Multiply the outputs by normalization factors
-                hypernet_hidden_states, intervention_weight = interpretor_output
-                intervention_weight = intervention_weight.squeeze()
+        interpretor_output = self.hypernetwork(
+            input_ids=editor_input_ids,
+            attention_mask=editor_attention_mask,
+            base_encoder_hidden_states=collapsed_base_hidden_states,
+            base_encoder_attention_mask=collapsed_base_attention_mask,
+            source_encoder_hidden_states=collapsed_source_hidden_states,
+            source_encoder_attention_mask=collapsed_source_attention_mask,
+            use_cache=False,
+        )
 
-        if inference_mode == "global_argmax":
-            batch_size, _, num_base_pos = intervention_weight.shape
-            source_base_intervention_flatten = intervention_weight[:, :-1, :].view(
-                batch_size, -1
-            )
-            max_intervention_position = torch.argmax(
-                source_base_intervention_flatten, dim=1
-            )
-            intervention_weight = torch.zeros_like(intervention_weight)
-            intervention_weight[:, -1, :] = 1.0
-            for i in range(batch_size):
-                source_token_idx = max_intervention_position[i] // num_base_pos
-                base_token_idx = max_intervention_position[i] % num_base_pos
-                intervention_weight[i, source_token_idx, base_token_idx] = 1.0
-                intervention_weight[i, -1, base_token_idx] = 0.0
-        elif inference_mode == "column_argmax":
-            batch_size, num_src_pos, num_base_pos = intervention_weight.shape
-            intervention_weight = torch.argmax(intervention_weight, dim=1)
-            intervention_weight = (
-                torch.nn.functional.one_hot(
-                    intervention_weight, num_classes=num_src_pos
-                )
-                .to(dtype=intervention_weight.dtype)
-                .permute(0, 2, 1)
-            )
-        elif inference_mode == "bidding_argmax":
-            batch_size, num_src_pos, num_base_pos = intervention_weight.shape
-            bidding_weight = torch.argmax(intervention_weight[:, :-1, :], dim=-1)
-            bidding_weight = torch.nn.functional.one_hot(
-                bidding_weight, num_classes=num_base_pos
-            ).float()
-            bidding_weight = torch.cat(
-                [
-                    bidding_weight,
-                    torch.ones(batch_size, 1, num_base_pos).to(bidding_weight.device),
-                ],
-                dim=1,
-            )
-            intervention_weight = torch.where(
-                bidding_weight == 1,
-                intervention_weight,
-                torch.zeros_like(intervention_weight),
-            )
-            if self.bidding_threshold is not None:
-                threshold = torch.Tensor([self.bidding_threshold]).to(
-                    intervention_weight.device
-                )
-                threshold = threshold.repeat(batch_size, num_base_pos)
-                intervention_weight[:, -1, :] = torch.where(
-                    intervention_weight[:, -1, :] > self.bidding_threshold,
-                    intervention_weight[:, -1, :],
-                    threshold,
-                )
-            intervention_weight = torch.argmax(intervention_weight, dim=1)
-            intervention_weight = (
-                torch.nn.functional.one_hot(
-                    intervention_weight, num_classes=num_src_pos
-                )
-                .to(dtype=intervention_weight.dtype)
-                .permute(0, 2, 1)
-            )
-
-        if len(intervention_weight.shape) == 2:
-            intervention_weight = intervention_weight.unsqueeze(
-                0
-            )  # Unsqueeze first dim if batch size = 1
+        # Multiply the outputs by normalization factors
+        hypernet_hidden_states, source_intervention_weight, base_intervention_weight = (
+            interpretor_output
+        )
 
         source_output = self.target_model(
             input_ids=source_input_ids,
@@ -1473,34 +1467,31 @@ class LlamaInterpretor(nn.Module):
 
         source_hidden_states = source_output.hidden_states[intervention_layer]
 
-        intervention_matrix = torch.einsum(
-            "bij,bid->bijd", intervention_weight[:, :-1, :], source_hidden_states
-        )  # TODO: Fix it to help the new implement
-        intervention_matrix = intervention_matrix.sum(dim=1)
+        hidden_dim = source_hidden_states.shape[-1]
 
-        metrics = {}
+        source_intervention = (
+            source_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim)
+            * source_hidden_states
+        )
+
+        source_intervention = source_intervention.sum(dim=1)
 
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
         def representation_swap(module, input, output):
             base_hidden_states = output[0].clone()
             batch_size = base_hidden_states.shape[0]
-            base_intervention_weight = intervention_weight[:, -1, :]
-
-            nonlocal metrics
 
             if self.use_das_intervention:
-                # print(intervention_matrix.shape)
-                # print(intervention_matrix[0, 1])
-                # print(base_hidden_states.shape)
-                # print(base_intervention_weight[0])
-
-                # print(torch.einsum("bid,bi->bid", base_hidden_states, - base_intervention_weight)[0, 1])
-                # print(torch.einsum("bid,bi->bid", base_hidden_states, base_intervention_weight)[0, 1])
-                # source_intervention_hidden_states = intervention_matrix + torch.einsum("bid,bi->bid", base_hidden_states, - base_intervention_weight)
-
-                source_intervention_hidden_states = intervention_matrix + torch.einsum(
-                    "bid,bi->bid", base_hidden_states, base_intervention_weight
+                base_remaining_weight = 1 - base_intervention_weight
+                source_intervention_hidden_states = source_intervention.unsqueeze(
+                    1
+                ).repeat(1, base_hidden_states.shape[1], 1)
+                source_intervention_hidden_states = (
+                    base_intervention_weight.unsqueeze(-1).repeat(1, 1, hidden_dim)
+                    * source_intervention_hidden_states
+                    + base_remaining_weight.unsqueeze(-1).repeat(1, 1, hidden_dim)
+                    * base_hidden_states
                 )
 
                 if self.das_selective_subspace:
@@ -1518,33 +1509,14 @@ class LlamaInterpretor(nn.Module):
 
                 if isinstance(mixed_output, InterventionModuleOutput):
                     mixed_output = mixed_output.mixed_output
-                    metrics = mixed_output.metrics
 
                 output[0][:] += mixed_output - base_hidden_states
             else:
-                res_diff = torch.einsum(
-                    "bid,bi->bid", base_hidden_states, (1 - base_intervention_weight)
-                )
-                output[0][:] += intervention_matrix - res_diff
-
-        def embedding_representation_swap(module, input, output):
-            if self.use_das_intervention:
-                raise NotImplementedError(
-                    "DAS intervention is not supported for token embeddings"
-                )
-
-            base_hidden_states = output.clone()
-            base_intervention_weight = intervention_weight[:, -1, :]
-            res_diff = torch.einsum(
-                "bid,bi->bid", base_hidden_states, (1 - base_intervention_weight)
-            )
-            output += intervention_matrix - res_diff
+                output[0][:] += source_intervention_hidden_states - base_hidden_states
 
         # Now editing the target model
         if intervention_layer == 0:
-            hooks = [
-                (self.target_model.model.embed_tokens, embedding_representation_swap)
-            ]
+            raise ValueError("Cannot intervene at layer 0")
         else:
             hooks = [
                 (
@@ -1560,22 +1532,16 @@ class LlamaInterpretor(nn.Module):
                 input_ids=base_input_ids,
                 attention_mask=base_attention_mask,
                 position_ids=base_position_ids,
-                output_hidden_states=output_edited_hidden_states,
+                output_hidden_states=True,
             )
 
         logits = target_result.logits
 
-        output = InterpretorModelOutput(logits=logits)
-        if output_edited_hidden_states:
-            output.edited_hidden_states = target_result.hidden_states
-
-        if output_intervention_weight:
-            output.intervention_weight = intervention_weight
-
-        if output_vanilla_hidden_states:
-            output.vanilla_base_hidden_states = base_hidden_states
-            output.vanilla_source_hidden_states = source_hidden_states
-
-        output.metrics = metrics
+        output = InterpretorModelOutput(
+            logits=logits,
+            source_intervention_weight=source_intervention_weight,
+            base_intervention_weight=base_intervention_weight,
+            target_hidden_states=target_result.hidden_states,
+        )
 
         return output

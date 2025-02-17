@@ -18,7 +18,6 @@ import wandb
 from logger import get_logger
 from src.hyperdas.data.axbench import parse_positions_varlen
 
-from ..das_utils import QuasiProjectiveIntervention
 from ..utils import InterpretorModelOutput, NamedDataLoader, init_on_device
 from .modules import (
     LlamaInterpretor,
@@ -123,6 +122,9 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         # Target model configs
         self.target_model_config = AutoConfig.from_pretrained(
             config.model.target_model_name_or_path
+        )
+        self.interpretor_config.target_hidden_size = (
+            self.target_model_config.hidden_size
         )
 
         # Ablation configs
@@ -542,8 +544,6 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     labels=batch["labels"],
                 )
                 test_loss.append(predictions["loss"].item())
-                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                    self.interpretor.zero_penalty()
 
                 batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
@@ -828,18 +828,18 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     epoch_train_loss += training_loss.item() * current_batch_size
                     self.opt.zero_grad()
 
-                    # TEST: orthogonalize the rotation matrix every step
-                    """if self.use_das_intervention:
-                        self.interpretor.das_module.orthogonalize_rotation_matrix()"""
-
                     metrics = {
                         "counters/step": cur_steps,
                         "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "grad_norm": grad_norm.item(),
-                        **prediction.metrics,
                         **grad_norm_metrics,
                     }
+                    if (
+                        hasattr(prediction, "metrics")
+                        and prediction.metrics is not None
+                    ):
+                        metrics.update(prediction.metrics)
                     if target_intervention_num is not None:
                         metrics["train_batch_#intervention_loss"] = (
                             intervention_number_loss.item()
@@ -1039,18 +1039,26 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             # Move batch to GPU
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
+            # Print shapes of all items in batch
+            for key, value in batch.items():
+                if isinstance(value, torch.Tensor):
+                    print(f"{key}: {value.shape}")
+                else:
+                    print(f"{key}: {type(value)}")
+
             # Forward pass through model
-            outputs = self.interpretor(
+            outputs = self.forward(
                 editor_input_ids=batch["editor_input_ids"],
-                base_input_ids=batch.get("base_input_ids"),
-                base_attention_mask=batch.get("base_attention_mask"),
-                base_intervention_mask=batch.get("base_intervention_mask"),
+                base_input_ids=batch["base_input_ids"],
+                base_attention_mask=batch["base_attention_mask"],
+                base_intervention_mask=batch["base_intervention_mask"],
                 target_input_ids=batch.get("target_input_ids"),
                 target_attention_mask=batch.get("target_attention_mask"),
                 target_position_ids=batch.get("target_position_ids"),
-                intervention_layers=batch.get("intervention_layers"),
-                intervention_positions=batch.get("intervention_positions"),
-                labels=batch.get("target_input_ids"),
+                intervention_layers=batch["intervention_layers"],
+                intervention_positions=batch["intervention_positions"],
+                labels=batch["labels"],
+                is_causal=batch["is_causal"],
             )
 
             # Get loss and perplexity

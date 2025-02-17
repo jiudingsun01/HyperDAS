@@ -97,12 +97,10 @@ class EditorModelOutput(BaseModelOutput):
 class InterpretorModelOutput(BaseModelOutput):
     logits: Optional[torch.Tensor] = None
     target_hidden_states: Optional[torch.Tensor] = None
-    edited_hidden_states: Optional[torch.Tensor] = None
-    intervention_weight: Optional[torch.Tensor] = None
-    vanilla_base_hidden_states: Optional[torch.Tensor] = None
-    vanilla_source_hidden_states: Optional[torch.Tensor] = None
+    source_intervention_weight: Optional[torch.Tensor] = None
+    base_intervention_weight: Optional[torch.Tensor] = None
     loss: Optional[torch.Tensor] = None
-    metrics: Dict[str, Any] = None
+    metrics: Optional[Dict[str, Any]] = None
 
 
 @dataclass
