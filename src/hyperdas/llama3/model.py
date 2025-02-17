@@ -1039,13 +1039,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             # Move batch to GPU
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
-            # Print shapes of all items in batch
-            for key, value in batch.items():
-                if isinstance(value, torch.Tensor):
-                    print(f"{key}: {value.shape}")
-                else:
-                    print(f"{key}: {type(value)}")
-
             # Forward pass through model
             outputs = self.forward(
                 editor_input_ids=batch["editor_input_ids"],

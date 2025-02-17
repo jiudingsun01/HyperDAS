@@ -15,7 +15,7 @@ training:
   test_batch_size: 16
 
 model:
-  max_length: 128
+  max_length: 256
   das_dimension: 1
 
 loss:
