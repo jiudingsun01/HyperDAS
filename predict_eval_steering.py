@@ -1,6 +1,8 @@
 """Main entrypoint script to train HyperDAS models and derivatives."""
 
 import gc
+import hashlib
+import json
 import os
 import random
 from enum import Enum
@@ -15,10 +17,11 @@ import torch.distributed as dist
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from openai import AsyncOpenAI
 from tqdm import tqdm
 
+import wandb
 from axbench.models.sae import load_metadata_flatten
 from axbench.scripts.evaluate import eval_steering
 from axbench.scripts.inference import (
@@ -54,6 +57,26 @@ class InferenceModes(str, Enum):
         if isinstance(other, str):
             return self.value == other
         return super().__eq__(other)
+
+
+def get_steering_cache_key(config, concept_ids, metadata):
+    """Create a hash key based on relevant inputs that would affect the steering data."""
+    cache_key_dict = {
+        "num_examples": config.axbench.inference.steering_num_of_examples,
+        "steering_factors": OmegaConf.to_container(
+            config.axbench.inference.steering_factors
+        ),
+        "steering_datasets": OmegaConf.to_container(
+            config.axbench.inference.steering_datasets
+        ),
+        "concept_ids": sorted(concept_ids),  # Sort for consistency
+        "metadata_hash": hashlib.sha256(
+            json.dumps(metadata, sort_keys=True).encode()
+        ).hexdigest(),
+    }
+    return hashlib.sha256(
+        json.dumps(cache_key_dict, sort_keys=True).encode()
+    ).hexdigest()
 
 
 @torch.no_grad()
@@ -100,7 +123,9 @@ def predict_steering(
         batch = get_axbench_collate_fn(
             hypernet_tokenizer,
             target_model_tokenizer,
-            mode="steering_eval",
+            mode="steering_eval"
+            if mode == InferenceModes.HYPERREFT
+            else "steering_prompt",
             intervention_layers=intervention_layers,
             intervention_positions=intervention_positions,
         )(converted_batch)
@@ -109,9 +134,9 @@ def predict_steering(
         batch = {k: v.to(device) for k, v in batch.items()}
 
         # Generate outputs based on mode
-        if mode == InferenceModes.PROMPT_STEERING:
+        if mode == InferenceModes.HYPERREFT:
             outputs = model.generate(
-                input_ids=batch["editor_input_ids"],
+                editor_input_ids=batch["editor_input_ids"],
                 base_input_ids=batch.get("base_input_ids"),
                 base_attention_mask=batch.get("base_attention_mask"),
                 base_intervention_mask=batch.get("base_intervention_mask"),
@@ -125,14 +150,11 @@ def predict_steering(
                 temperature=temperature,
                 do_intervention=True,
             )
-        elif mode == InferenceModes.HYPERREFT:
+        elif mode == InferenceModes.PROMPT_STEERING:
             outputs = model.generate(
-                input_ids=batch["editor_input_ids"],
                 target_input_ids=batch.get("target_input_ids"),
                 target_attention_mask=batch.get("target_attention_mask"),
                 target_position_ids=batch.get("target_position_ids"),
-                intervention_layers=batch.get("intervention_layers"),
-                intervention_positions=batch.get("intervention_positions"),
                 max_new_tokens=eval_output_length,
                 do_sample=do_sample,
                 temperature=temperature,
@@ -164,6 +186,9 @@ def predict_steering(
         all_generations.extend(generations)
         all_perplexities.extend(perplexities.tolist())
 
+    torch.cuda.empty_cache()
+    gc.collect()
+
     return {
         f"{mode}_steered_generation": all_generations,
         f"{mode}_perplexity": all_perplexities,
@@ -173,16 +198,17 @@ def predict_steering(
 def infer_steering(config, rank, world_size, device, logger):
     logger.info(f"Starting inference for rank {rank} out of {world_size}")
 
-    data_dir = config.axbench.inference.data_dir
-    dump_dir = config.axbench.inference.dump_dir
+    data_dir = Path(config.axbench.inference.data_dir)
+    dump_dir = Path(config.training.load_trained_from)
+
     num_of_examples = config.axbench.inference.steering_num_of_examples
-    metadata = load_metadata_flatten(Path(data_dir) / METADATA_FILE)
+    metadata = load_metadata_flatten(data_dir / METADATA_FILE)
     steering_factors = config.axbench.inference.steering_factors
     steering_datasets = config.axbench.inference.steering_datasets
 
     logger.debug(f"Loaded metadata with {len(metadata)} examples")
 
-    state = load_state(config.axbench.inference.dump_dir, "steering", rank)
+    state = load_state(dump_dir, "steering", rank)
     last_concept_id_processed = state.get("last_concept_id", None) if state else None
     logger.warning(
         f"Rank {rank} last concept_id processed: {last_concept_id_processed}"
@@ -264,19 +290,56 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Prepare data per concept
     logger.debug("Preparing data per concept")
-    data_per_concept = {}
-    for concept_id in my_concept_ids:
-        current_df, (_, sae_link, sae_id) = create_data_steering(
-            dataset_factory,
-            metadata,
-            concept_id,
-            num_of_examples,
-            steering_factors,
-            steering_datasets,
-            None,
-        )
-        data_per_concept[concept_id] = (current_df, sae_link, sae_id)
-    logger.info(f"Prepared data for {len(data_per_concept)} concepts")
+    cache_key = get_steering_cache_key(config, my_concept_ids, metadata)
+    cache_file = os.path.join(dump_dir, f"steering_data_cache_{cache_key}.parquet")
+
+    # Try to load from cache first
+    if os.path.exists(cache_file):
+        logger.info("Loading steering data from cache")
+        cached_df = pd.read_parquet(cache_file)
+        data_per_concept = {}
+        # Reconstruct the data_per_concept dictionary from the cached DataFrame
+        for concept_id in my_concept_ids:
+            concept_data = cached_df[cached_df["concept_id"] == concept_id]
+            if not concept_data.empty:
+                sae_link = concept_data["sae_link"].iloc[0]
+                sae_id = concept_data["sae_id"].iloc[0]
+                data_per_concept[concept_id] = (
+                    concept_data.drop(["sae_link", "sae_id"], axis=1),
+                    sae_link,
+                    sae_id,
+                )
+    else:
+        logger.info("Generating steering data and caching results")
+        data_per_concept = {}
+        all_dfs = []
+
+        for concept_id in my_concept_ids:
+            current_df, (_, sae_link, sae_id) = create_data_steering(
+                dataset_factory,
+                metadata,
+                concept_id,
+                num_of_examples,
+                steering_factors,
+                steering_datasets,
+                None,
+            )
+            # Add sae info to DataFrame for caching
+            current_df["sae_link"] = sae_link
+            current_df["sae_id"] = sae_id
+            all_dfs.append(current_df)
+
+            # Store in memory format
+            data_per_concept[concept_id] = (
+                current_df.drop(["sae_link", "sae_id"], axis=1),
+                sae_link,
+                sae_id,
+            )
+
+        # Cache the results
+        if all_dfs:
+            pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
+            logger.info(f"Cached steering data to {cache_file}")
 
     # Now loop over concept_ids and use preloaded models
     for concept_id in my_concept_ids:
@@ -310,7 +373,7 @@ def infer_steering(config, rank, world_size, device, logger):
         )
         # After processing, save state
         current_state = {"last_concept_id": concept_id}
-        save_state(config.axbench.inference.dump_dir, current_state, "generate", rank)
+        save_state(dump_dir, current_state, "generate", rank)
 
     logger.info(f"Rank {rank} completed all concepts, cleaning up")
     del model_instance
@@ -388,8 +451,68 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
     )
 
 
+def find_run_by_name(run_name, entity, project):
+    """Find a wandb run by name across all projects."""
+    api = wandb.Api()
+    # Search across all projects in the entity
+    runs = api.runs(f"{entity}/{project}", {"display_name": run_name})
+    for run in runs:
+        if run.name == run_name:
+            return run
+    return None
+
+
 def run_eval(cfg: DictConfig):
     args = cfg.axbench.evaluate
+
+    checkpoint_path = Path(cfg.training.load_trained_from)
+    # load config from checkpoint
+    trained_cfg = OmegaConf.load(checkpoint_path.parent / "config.yaml")
+
+    args.data_dir = os.path.join(cfg.training.load_trained_from, "inference")
+    args.dump_dir = cfg.training.load_trained_from
+
+    # Initialize wandb if needed
+    if args.report_to is not None and "wandb" in args.report_to:
+        if checkpoint_path.exists():
+            # Extract run name from checkpoint dir - adjust pattern as needed
+            run_name = checkpoint_path.parent.name
+
+            # Try to find existing run
+            existing_run = find_run_by_name(
+                run_name,
+                trained_cfg.wandb_config.entity,
+                trained_cfg.wandb_config.project,
+            )
+            if existing_run:
+                # Resume the existing run
+                wandb.init(
+                    project=trained_cfg.wandb_config.project,
+                    entity=trained_cfg.wandb_config.entity,
+                    id=existing_run.id,
+                    resume="must",
+                )
+            else:
+                # Create new run with standard naming
+                wandb_name = f"{args.dump_dir.split('/')[-1]}"
+                wandb.init(
+                    project=trained_cfg.wandb_config.project,
+                    entity=trained_cfg.wandb_config.entity,
+                    name=f"{wandb_name}_{args.mode}"
+                    if args.run_name is None
+                    else f"{args.run_name}_{wandb_name}_{args.mode}",
+                )
+        else:
+            # Standard wandb initialization if no checkpoint dir
+            wandb_name = f"{args.dump_dir.split('/')[-1]}"
+            wandb.init(
+                project=trained_cfg.wandb_config.project,
+                entity=trained_cfg.wandb_config.entity,
+                name=f"{wandb_name}_{args.mode}"
+                if args.run_name is None
+                else f"{args.run_name}_{wandb_name}_{args.mode}",
+            )
+
     eval_steering(args)
 
 
@@ -442,13 +565,15 @@ def main(cfg: DictConfig):
         torch.manual_seed(cfg.training.seed)
         random.seed(cfg.training.seed)
 
-        if cfg.axbench.mode == "inference":
-            run_inference(cfg, device)
-        elif cfg.axbench.mode == "eval":
-            run_eval(cfg)
-        elif cfg.axbench.mode == "all":
-            run_inference(cfg, device)
-            run_eval(cfg)
+        exp_cfg = cfg.experiment if hasattr(cfg, "experiment") else cfg
+
+        if exp_cfg.axbench.mode == "inference":
+            run_inference(exp_cfg, device)
+        elif exp_cfg.axbench.mode == "eval":
+            run_eval(exp_cfg)
+        elif exp_cfg.axbench.mode == "all":
+            run_inference(exp_cfg, device)
+            run_eval(exp_cfg)
 
         if cfg.device_mode == "cuda":
             torch.cuda.empty_cache()

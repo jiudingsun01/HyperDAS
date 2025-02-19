@@ -5,6 +5,7 @@ datasets
 gdown
 hydra-core
 hydra-joblib-launcher
+hydra-ray-jobs-launcher
 hydra-submitit-launcher
 hydra_colorlog
 ipykernel
@@ -21,7 +22,6 @@ python-dotenv
 pyvene
 pyyaml
 ray[default]
-hydra-ray-jobs-launcher
 scikit-learn
 seaborn
 tiktoken
@@ -29,3 +29,4 @@ torch
 tqdm
 transformers==4.45.1
 wandb
+

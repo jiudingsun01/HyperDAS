@@ -13,6 +13,34 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 NamedDataLoader = namedtuple("NamedDataLoader", ["name", "data_loader"])
 
 
+class SimpleTensorCache:
+    def __init__(self):
+        self._cache = {}
+
+    def __getitem__(self, key):
+        return self._cache[key]
+
+    def __setitem__(self, key, value):
+        self._cache[key] = value
+
+    def __delitem__(self, key):
+        del self._cache[key]
+
+    def __contains__(self, key):
+        return key in self._cache
+
+    def __len__(self):
+        return len(self._cache)
+
+    def clear(self):
+        # only clear tensor values
+        keys_to_delete = [
+            k for k, v in self._cache.items() if isinstance(v, torch.Tensor)
+        ]
+        for k in keys_to_delete:
+            del self._cache[k]
+
+
 @contextmanager
 def init_on_device(device):
     """Context manager that forces model initialization directly on the specified device."""

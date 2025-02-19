@@ -200,7 +200,9 @@ def parse_positions_varlen(positions: str, seq_len: int):
 def get_axbench_collate_fn(
     hypernet_tokenizer,
     target_tokenizer=None,
-    mode: Literal["steering_train", "steering_eval", "concept"] = "steering_train",
+    mode: Literal[
+        "steering_train", "steering_eval", "steering_prompt", "concept"
+    ] = "steering_train",
     intervention_layers=None,
     intervention_positions=None,
 ):
@@ -208,13 +210,18 @@ def get_axbench_collate_fn(
         inputs, edit_instructions, targets = [], [], []
 
         for b in batch:
-            inputs.append(b["input"])
-            edit_instructions.append(
-                b["input_concept"] if mode == "steering_eval" else b["output_concept"]
+            inputs.append(
+                b["input"] if mode != "steering_prompt" else b["steered_input"]
             )
-            if mode != "steering_eval":
+            edit_instructions.append(
+                b["input_concept"]
+                if mode in ["steering_eval", "steering_prompt"]
+                else b["output_concept"]
+            )
+            if mode not in ["steering_eval", "steering_prompt"]:
                 targets.append(b["output"])
             else:
+                # Dummy since we are not using labels
                 targets.append("")
 
         editor_input_ids = hypernet_tokenizer(

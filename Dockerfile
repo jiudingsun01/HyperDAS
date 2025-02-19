@@ -24,5 +24,8 @@ RUN python setup.py develop || true \
 COPY scripts/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Run install script if exists
+RUN if [ -f install.sh ]; then bash install.sh; fi
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["zsh"]

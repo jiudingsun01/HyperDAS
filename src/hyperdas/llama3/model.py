@@ -89,7 +89,7 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
             os.path.join(save_dir, "hypernetwork.pt"),
         )
         torch.save(
-            self.interpretor.das_module.state_dict(),
+            self.interpretor.intervention_module.state_dict(),
             os.path.join(save_dir, "intervenable.pt"),
         )
 
@@ -97,7 +97,7 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         self.interpretor.hypernetwork.load_state_dict(
             torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
         )
-        self.interpretor.das_module.load_state_dict(
+        self.interpretor.intervention_module.load_state_dict(
             torch.load(os.path.join(load_dir, "intervenable.pt"), weights_only=True)
         )
 
@@ -179,14 +179,14 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         super().save_model(save_dir)
         if self.use_das_intervention:
             torch.save(
-                self.interpretor.das_module.state_dict(),
+                self.interpretor.intervention_module.state_dict(),
                 os.path.join(save_dir, "das.pt"),
             )
 
     def load_model(self, load_dir):
         super().load_model(load_dir)
         if self.use_das_intervention:
-            self.interpretor.das_module.load_state_dict(
+            self.interpretor.intervention_module.load_state_dict(
                 torch.load(os.path.join(load_dir, "das.pt"), weights_only=True)
             )
 
@@ -633,7 +633,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         trainable_parameters = []
         for name, param in self.named_parameters():
             if "target_model" not in name:
-                if "das_module" in name:
+                if "intervention_module" in name:
                     if "rotate_layer" in name:
                         trainable_parameters += [
                             {"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}
@@ -658,7 +658,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
         cur_steps = 0
 
         if self.use_das_intervention and hasattr(
-            self.interpretor.das_module, "set_temperature"
+            self.interpretor.intervention_module, "set_temperature"
         ):
             das_temperature_schedule = (
                 torch.linspace(
@@ -669,7 +669,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 .to(self.interpretor_config.torch_dtype)
                 .to(self.device)
             )
-            self.interpretor.das_module.set_temperature(
+            self.interpretor.intervention_module.set_temperature(
                 das_temperature_schedule[cur_steps]
             )
 
@@ -818,8 +818,10 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     )
 
                     # Log more gradient norms
-                    if hasattr(self.interpretor.das_module, "gradient_norms"):
-                        grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+                    if hasattr(self.interpretor.intervention_module, "gradient_norms"):
+                        grad_norm_metrics = (
+                            self.interpretor.intervention_module.gradient_norms()
+                        )
                     else:
                         grad_norm_metrics = {}
 
@@ -856,9 +858,9 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
                     if self.use_das_intervention and hasattr(
-                        self.interpretor.das_module, "set_temperature"
+                        self.interpretor.intervention_module, "set_temperature"
                     ):
-                        self.interpretor.das_module.set_temperature(
+                        self.interpretor.intervention_module.set_temperature(
                             das_temperature_schedule[cur_steps]
                         )
 
@@ -1095,10 +1097,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         trainable_parameters += [
                             {"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}
                         ]
-                    elif "mask_projection" in name:
-                        trainable_parameters += [
-                            {"params": param, "lr": self.boundary_lr}
-                        ]
                     else:
                         trainable_parameters += [{"params": param}]
                 else:
@@ -1206,8 +1204,10 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     )
 
                     # Log more gradient norms
-                    if hasattr(self.interpretor.das_module, "gradient_norms"):
-                        grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+                    if hasattr(self.interpretor.intervention_module, "gradient_norms"):
+                        grad_norm_metrics = (
+                            self.interpretor.intervention_module.gradient_norms()
+                        )
                     else:
                         grad_norm_metrics = {}
 
@@ -1221,6 +1221,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "grad_norm": grad_norm.item(),
+                        "learning_rate": self.opt.param_groups[0]["lr"],
                         **prediction.metrics,
                         **grad_norm_metrics,
                     }

@@ -40,6 +40,7 @@ from ..reft_utils import (
 from ..utils import (
     InterpretorModelOutput,
     InterpretorModelOutputWithLearnedSource,
+    SimpleTensorCache,
     add_fwd_hooks,
     assign_layer_indices,
 )
@@ -543,21 +544,21 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
 
         if self.use_das_intervention:
             if subspace_module == "LoReFT":
-                self.das_module = LoreftIntervention(
+                self.intervention_module = LoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "SelectiveLoReFT":
-                self.das_module = SelectiveLoreftIntervention(
+                self.intervention_module = SelectiveLoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "SteeringVec":
-                self.das_module = SteeringVecLoreftIntervention(
+                self.intervention_module = SteeringVecLoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
@@ -587,7 +588,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         self.layerwise_embeddings = None
         self.original_layer_forward = {}
 
-        self._cache = {}
+        self._temp_global_cache = SimpleTensorCache()
 
     def train(self: T_Reft, mode: bool = True) -> T_Reft:
         return self.hypernetwork.train(mode)
@@ -629,40 +630,55 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
     def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
         do_intervention = kwargs.pop("do_intervention", True)
 
+        # Prompt length is used later to determine if we are in generation mode
+        self._temp_global_cache["prompt_lengths"] = [
+            len(x) for x in kwargs["target_input_ids"]
+        ]
         # prune kwargs for generation
-        for kw in list(kwargs.keys()):
-            if kw.startswith("base") or "intervention" in kw:
-                kwargs.pop(kw)
-            elif kw.startswith("target_"):
-                kwargs[kw.replace("target_", "")] = kwargs.pop(kw)
+        target_kwargs = {}
+        for kw in kwargs.keys():
+            if kw.startswith("target_"):
+                target_kwargs[kw.replace("target_", "")] = kwargs[kw]
+            elif all(not kw.startswith(x) for x in ["base", "editor", "intervention"]):
+                target_kwargs[kw] = kwargs[kw]
 
         if do_intervention:
             try:
-                self.prepare_for_generation()
-                outputs = self.target_model.generate(*args, **kwargs)
+                self.prepare_for_generation(**kwargs)
+                outputs = self.target_model.generate(*args, **target_kwargs)
             finally:
                 self.cleanup_after_generation()
         else:
-            outputs = self.target_model.generate(*args, **kwargs)
+            outputs = self.target_model.generate(*args, **target_kwargs)
         return outputs
 
-    def _create_generate_intervention_hook(self, layer_idx):
-        def intervention_forward(module, input, kwargs, output):
+    def _create_generate_intervention_hook(self, layer_idx, **kwargs):
+        def intervention_forward(module, input, target_kwargs, output):
             # Only apply intervention during prefill phase
-            if kwargs.get("past_key_value") is None:
+            if (
+                self._temp_global_cache["prompt_lengths"][0]
+                == target_kwargs.get("past_key_value")._seen_tokens
+            ):
                 hidden_states = output[0]
-                self._cache["current_layer"] = layer_idx
+                kwargs["generation"] = True
+                kwargs["editor_attention_mask"] = (
+                    kwargs["editor_input_ids"] != self.config.eos_token_id
+                )
+                _ = self.forward(**kwargs)
+                self._temp_global_cache["current_layer_rel_idx"] = layer_idx
                 modified_states, _ = self._apply_intervention(
                     hidden_states,
-                    hypernet_hidden_states=self._cache["hypernet_hidden_states"],
+                    intervention_positions=kwargs.get("intervention_positions"),
                 )
+                # Manually handle cache clearing
+                self._temp_global_cache.clear()
                 output = (modified_states,) + output[1:]
 
             return output
 
         return intervention_forward
 
-    def prepare_for_generation(self):
+    def prepare_for_generation(self, **kwargs):
         """Setup hooks for generation"""
         self.intervention_hooks = []
         for layer_idx, layer in enumerate(self.target_model.model.layers):
@@ -673,8 +689,13 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             )
             if layer_idx in intervention_layers:
                 # NOTE: important to allow kwargs else we can't check if in generation mode all kwargs ignored!
+                current_layer_rel_idx = intervention_layers.index(layer_idx)
+                # Use rel idx because of cache positioning
                 hook = layer.register_forward_hook(
-                    self._create_generate_intervention_hook(layer_idx), with_kwargs=True
+                    self._create_generate_intervention_hook(
+                        current_layer_rel_idx, **kwargs
+                    ),
+                    with_kwargs=True,
                 )
                 self.intervention_hooks.append(hook)
 
@@ -691,24 +712,29 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         metrics=None,
     ):
         """Common intervention logic used by both forward and generation"""
-        if not hasattr(self, "das_module"):
-            raise ValueError("DAS module not initialized")
+        if not hasattr(self, "intervention_module"):
+            raise ValueError("intervention module not initialized")
 
-        current_layer = self._cache["current_layer"]
+        current_layer_rel_idx = self._temp_global_cache["current_layer_rel_idx"]
 
         # During generation, we'll reuse the cached hypernet states
-        rotation_matrix = self._cache["rotation_matrix"][:, current_layer]
-        weight_matrix = self._cache["weight_matrix"][:, current_layer]
+        rotation_matrix = self._temp_global_cache["rotation_matrix"][
+            :, current_layer_rel_idx
+        ]
+        weight_matrix = self._temp_global_cache["weight_matrix"][
+            :, current_layer_rel_idx
+        ]
 
         # Set the batch parameters for the DAS module
-        self.das_module.set_batch_parameters(rotation_matrix, weight_matrix)
+        self.intervention_module.set_batch_parameters(rotation_matrix, weight_matrix)
 
         # Apply intervention, assuming LoReFT impl
-        intervention_output = self.das_module(
+        intervention_output = self.intervention_module(
             hidden_states, intervention_positions=intervention_positions
         )
         mixed_output = intervention_output.mixed_output
         metrics = intervention_output.metrics
+
         return mixed_output, metrics
 
     def forward(
@@ -726,6 +752,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         intervention_layers: Optional[List[int]] = None,
         intervention_positions: Optional[torch.LongTensor] = None,
         run_weight_generation: bool = True,
+        generation: bool = False,
         **kwargs,
     ) -> InterpretorModelOutput:
         if intervention_layers is None:
@@ -851,59 +878,69 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         # Stack along layer axis -> (B, L, P, H)
         hypernet_hidden_states = torch.stack(layer_hidden_states, dim=1)
 
-        if run_weight_generation and hasattr(self.das_module, "set_batch_parameters"):
+        if run_weight_generation and hasattr(
+            self.intervention_module, "set_batch_parameters"
+        ):
             # run hypernetwork to generate ReFT weights
             # each of shape (B, L, P, H, R)
             rotation_matrix, weight_matrix = self.reft_generator(
                 hypernet_hidden_states, intervention_layers, intervention_positions
             )
-            self._cache["rotation_matrix"] = rotation_matrix
-            self._cache["weight_matrix"] = weight_matrix
+            self._temp_global_cache["rotation_matrix"] = rotation_matrix
+            self._temp_global_cache["weight_matrix"] = weight_matrix
+            self._temp_global_cache["hypernet_hidden_states"] = hypernet_hidden_states
 
         metrics = {}
 
-        # Run target model with edit vectors.
-        # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
-        def representation_swap(module, input, output, current_layer_rel_idx=0):
-            base_hidden_states = output[0].clone()
+        # Flag preventing redundant prefill
+        if not generation:
+            # Run target model with edit vectors.
+            # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
+            def representation_swap(module, input, output, current_layer_rel_idx=0):
+                nonlocal metrics
 
-            nonlocal metrics
-
-            self._cache["current_layer"] = current_layer_rel_idx
-            mixed_output, metrics = self._apply_intervention(
-                base_hidden_states, intervention_positions=intervention_positions
-            )
-            output[0][:] += mixed_output
-
-        # Now editing the target model
-        if intervention_layers is None:
-            raise ValueError("Cannot intervene at layer 0")
-        else:
-            hooks = [
-                (
-                    self.target_model.model.layers[layer_idx - 1],
-                    partial(representation_swap, current_layer_rel_idx=rel_idx),
+                self._temp_global_cache["current_layer_rel_idx"] = current_layer_rel_idx
+                mixed_output, metrics = self._apply_intervention(
+                    output[0], intervention_positions=intervention_positions
                 )
-                for rel_idx, layer_idx in enumerate(intervention_layer_list)
-            ]
 
-        with add_fwd_hooks(hooks):
-            # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
-            # THE END OF `layer` AS A SIDE EFFECT)
-            target_result = self.target_model(
-                input_ids=target_input_ids,
-                attention_mask=target_attention_mask,
-                position_ids=target_position_ids,
-                output_hidden_states=True,
+                output[0][:] += mixed_output
+
+            # Now editing the target model
+            if intervention_layers is None:
+                raise ValueError("Cannot intervene at layer 0")
+            else:
+                hooks = [
+                    (
+                        self.target_model.model.layers[layer_idx - 1],
+                        partial(representation_swap, current_layer_rel_idx=rel_idx),
+                    )
+                    for rel_idx, layer_idx in enumerate(intervention_layer_list)
+                ]
+
+            with add_fwd_hooks(hooks):
+                # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
+                # THE END OF `layer` AS A SIDE EFFECT)
+                target_result = self.target_model(
+                    input_ids=target_input_ids,
+                    attention_mask=target_attention_mask,
+                    position_ids=target_position_ids,
+                    output_hidden_states=True,
+                )
+
+            logits = target_result.logits
+
+            # Clear cache of outdated entries in next forward pass to save memory
+            # only during training in inference we manually handle
+            self._temp_global_cache.clear()
+
+            output = InterpretorModelOutput(
+                logits=logits,
+                target_hidden_states=target_result.hidden_states,
             )
-
-        logits = target_result.logits
-
-        output = InterpretorModelOutput(
-            logits=logits,
-            target_hidden_states=target_result.hidden_states,
-        )
-        output.metrics = metrics
+            output.metrics = metrics
+        else:
+            output = None
 
         return output
 
@@ -940,21 +977,21 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
 
         if self.use_das_intervention:
             if subspace_module == "LoReFT":
-                self.das_module = LoreftIntervention(
+                self.intervention_module = LoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "SelectiveLoReFT":
-                self.das_module = SelectiveLoreftIntervention(
+                self.intervention_module = SelectiveLoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "SteeringVec":
-                self.das_module = SteeringVecLoreftIntervention(
+                self.intervention_module = SteeringVecLoreftIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     dtype=config.torch_dtype,
@@ -1130,13 +1167,13 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
                 ).repeat(1, 1, hidden_dim)
 
                 if self.das_selective_subspace:
-                    intervention_output = self.das_module(
+                    intervention_output = self.intervention_module(
                         base_hidden_states, hidden_states=hypernet_hidden_states
                     )
                     mixed_output = intervention_output.mixed_output
                     mixed_output = mixed_output * base_hidden_states_weight
                 else:
-                    intervention_output = self.das_module(base_hidden_states)
+                    intervention_output = self.intervention_module(base_hidden_states)
                     mixed_output = intervention_output.mixed_output
                     mixed_output = mixed_output * base_hidden_states_weight
 
@@ -1212,34 +1249,34 @@ class LlamaInterpretor(nn.Module):
 
         if self.use_das_intervention:
             if subspace_module == "BoundlessDAS":
-                self.das_module = BoundlessRotatedSpaceIntervention(
+                self.intervention_module = BoundlessRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "DAS":
-                self.das_module = LowRankRotatedSpaceIntervention(
+                self.intervention_module = LowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "MaskSelect":
-                self.das_module = SelectiveLowRankRotatedSpaceIntervention(
+                self.intervention_module = SelectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "ReflectSelect":
-                self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
+                self.intervention_module = ReflectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=config.das_dimension,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )
             elif subspace_module == "QuasiProjective":
-                self.das_module = QuasiProjectiveIntervention(
+                self.intervention_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     dict_size=config.dict_size,
                     scoring_dimension=config.scoring_dimension,
@@ -1495,13 +1532,13 @@ class LlamaInterpretor(nn.Module):
                 )
 
                 if self.das_selective_subspace:
-                    mixed_output = self.das_module(
+                    mixed_output = self.intervention_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         hypernet_hidden_states,
                     )
                 else:
-                    mixed_output = self.das_module(
+                    mixed_output = self.intervention_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         batch_size,
