@@ -6,7 +6,7 @@ services:
     env_file: .env
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: ${DOCKERFILE}  # Defaults to Dockerfile if not set
       args:
         - PYTHON_VERSION=${PYTHON_VERSION}
         - GIT_EMAIL=${GIT_EMAIL}

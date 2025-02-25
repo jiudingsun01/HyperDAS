@@ -20,7 +20,7 @@ from src.hyperdas.data.axbench import parse_positions_varlen
 
 from ..utils import InterpretorModelOutput, NamedDataLoader, init_on_device
 from .modules import (
-    LlamaInterpretor,
+    LlamaInterpretorWithBaseSource,
     LlamaInterpretorConfig,
     LlamaInterpretorForReFTGeneration,
     LlamaInterpretorWithLearnedSource,
@@ -29,7 +29,7 @@ from .modules import (
 logger = get_logger(__name__)
 
 INTERPRETOR_CLS = {
-    "regular": LlamaInterpretor,
+    "regular": LlamaInterpretorWithBaseSource,
     "learned_source": LlamaInterpretorWithLearnedSource,
     "reft": LlamaInterpretorForReFTGeneration,
 }
@@ -78,7 +78,7 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         self.max_eval_steps = config.training.max_eval_steps
 
         # Dummy initialization for typing
-        self.interpretor: LlamaInterpretor = None
+        self.interpretor: LlamaInterpretorWithBaseSource = None
 
     def save_model(self, save_dir):
         if not os.path.exists(save_dir):
@@ -919,6 +919,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             + 1
         )
         self.interpretor_config.target_hidden_size = config.model.target_hidden_size
+        self.interpretor_config.hypernetwork_type = config.model.hypernetwork_type
         self.rotate_lr = config.training.get("rotate_lr", 1e-3)
 
         # Initialize model components
@@ -1199,17 +1200,35 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     training_loss += prediction_loss
 
                     training_loss.backward()
-                    grad_norm = nn.utils.clip_grad_norm_(
+                    total_grad_norm = nn.utils.clip_grad_norm_(
                         self.parameters(), max_grad_norm
                     )
 
-                    # Log more gradient norms
-                    if hasattr(self.interpretor.intervention_module, "gradient_norms"):
-                        grad_norm_metrics = (
-                            self.interpretor.intervention_module.gradient_norms()
+                    # Calculate gradient norms for all modules
+                    grad_norm_metrics = {}
+
+                    # Group parameters by module path
+                    for name, param in self.named_parameters():
+                        if param.grad is not None and "target_model" not in name:
+                            # Skip target model parameters to reduce noise
+                            grad_norm = param.grad.norm().item()
+                            grad_norm_metrics[f"grad_norm/{name}"] = grad_norm
+
+                    # Also calculate top-level module norms
+                    module_grads = {}
+                    for name, param in self.named_parameters():
+                        if param.grad is not None and "target_model" not in name:
+                            top_module = name.split(".")[0]
+                            if top_module not in module_grads:
+                                module_grads[top_module] = []
+                            module_grads[top_module].append(param.grad.norm())
+
+                    # Calculate combined norm for each top module
+                    for module, grads in module_grads.items():
+                        combined_norm = torch.norm(torch.stack(grads), 2).item()
+                        grad_norm_metrics[f"grad_norm_combined/{module}"] = (
+                            combined_norm
                         )
-                    else:
-                        grad_norm_metrics = {}
 
                     self.opt.step()
                     # metrics
@@ -1220,7 +1239,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                         "counters/step": cur_steps,
                         "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
-                        "grad_norm": grad_norm.item(),
+                        "grad_norm": total_grad_norm.item(),
                         "learning_rate": self.opt.param_groups[0]["lr"],
                         **prediction.metrics,
                         **grad_norm_metrics,

@@ -2,8 +2,9 @@ ARG PYTHON_VERSION
 ARG GIT_NAME
 ARG GIT_EMAIL
 ARG PROJECT_NAME
+ARG VARIANT=cuda
 
-FROM ghcr.io/${GIT_NAME}/ml-base:py${PYTHON_VERSION}
+FROM ghcr.io/${GIT_NAME}/ml-base:py${PYTHON_VERSION}-${VARIANT}
 
 ENV PATH="/usr/local/bin:/root/.local/bin:/opt/conda/bin:${PATH}"
 WORKDIR /workspace/${PROJECT_NAME}
@@ -14,18 +15,24 @@ RUN git config --global user.email "${GIT_EMAIL}" && \
 
 # Install requirements
 COPY requirements.txt /tmp/
-RUN uv pip install --system --no-cache-dir -r /tmp/requirements.txt && \
+RUN uv pip install --system --no-cache-dir --no-upgrade -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt || true
+
+# Install PyTorch nightly only for gh200 variant
+RUN if [ "${VARIANT}" = "gh200" ]; then \
+uv pip install --system --force-reinstall --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126; \
+fi
 
 # If python package exists, install it
 RUN python setup.py develop || true \
-    && uv pip install --system --no-cache-dir -e . || true
+    && uv pip install --system --no-cache-dir -e . || true \
+    && uv pip install --system ipdb
 
 COPY scripts/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Run install script if exists
-RUN if [ -f install.sh ]; then bash install.sh; fi
+RUN if [ -f scripts/install.sh ]; then bash scripts/install.sh; fi
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["zsh"]

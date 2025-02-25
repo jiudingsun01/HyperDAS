@@ -17,3 +17,4 @@ multirun
 .env
 outputs/
 assets/
+.DS_Store

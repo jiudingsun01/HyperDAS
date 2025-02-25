@@ -200,28 +200,18 @@ class LoreftIntervention(
             else ACT2FN[kwargs["act_fn"]]
         )
 
-        # Store batch-specific parameters
-        self.batch_rotation = None
-        self.batch_weights = None
-
-    def set_batch_parameters(
-        self, rotation_matrix: torch.Tensor, weight_matrix: torch.Tensor
-    ):
-        """Set batch-specific rotation and weight matrices.
-
-        Args:
-            rotation_matrix: Tensor of shape (batch_size, target_hidden_size, low_rank_dimension)
-            weight_matrix: Tensor of shape (batch_size, target_hidden_size, low_rank_dimension)
-        """
-        self.batch_rotation = rotation_matrix
-        self.batch_weights = weight_matrix
-
     def forward(
-        self, base, source=None, subspaces=None, intervention_positions=None
+        self,
+        base,
+        source=None,
+        subspaces=None,
+        intervention_positions=None,
+        batch_rotation=None,
+        batch_weights=None,
     ) -> InterventionModuleOutput:
         metrics = {}
 
-        if self.batch_rotation is not None and self.batch_weights is not None:
+        if batch_rotation is not None and batch_weights is not None:
             # self.batch_rotation: [B, P, H, R]
             # self.batch_weights: [B, P, H, R]
             # base: [B, S, H]
@@ -234,15 +224,15 @@ class LoreftIntervention(
 
             # Apply LoReFT transformation where mask is True
             rotated_states = torch.matmul(
-                intervention_states, self.batch_rotation
+                intervention_states, batch_rotation
             )  # [B, P, R]
             learned_states = torch.matmul(
-                intervention_states, self.batch_weights
+                intervention_states, batch_weights
             )  # [B, P, R]
 
             mixed_states = torch.matmul(
                 (self.act_fn(learned_states) - rotated_states),  # [B, P, R]
-                self.batch_rotation.transpose(-2, -1),  # [B, P, R, H]
+                batch_rotation.transpose(-2, -1),  # [B, P, R, H]
             )  # [B, P, H]
 
             # Blend based on intervention position mask

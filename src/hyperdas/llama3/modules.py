@@ -50,7 +50,7 @@ from .layers import (
 )
 
 T_Learned = TypeVar("T_Learned", bound="LlamaInterpretorWithLearnedSource")
-T_Regular = TypeVar("T_Regular", bound="LlamaInterpretor")
+T_Regular = TypeVar("T_Regular", bound="LlamaInterpretorWithBaseSource")
 T_Reft = TypeVar("T_Reft", bound="LlamaInterpretorForReFTGeneration")
 
 logger = get_logger(__name__)
@@ -120,6 +120,8 @@ class LlamaInterpretorConfig(LlamaConfig):
     target_hidden_size: int = None
     num_target_layers: int = None
     num_target_positions: int = None
+    dropout: float = 0.05
+    hypernetwork_type: Literal["lm", "mlp"] = "lm"
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -493,6 +495,28 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         return hidden_states, source_attn_weight, base_attn_weight
 
 
+class SimpleMLPHypernetwork(nn.Module):
+    def __init__(self, config: LlamaInterpretorConfig):
+        super().__init__()
+        self.config = config
+        self.mlp = nn.Sequential(
+            nn.Linear(
+                config.hidden_size, config.intermediate_size, dtype=config.torch_dtype
+            ),
+            nn.LayerNorm(config.intermediate_size, eps=1e-5),
+            nn.SiLU(),
+            nn.Dropout(config.dropout),
+            # nn.Linear(
+            #     config.intermediate_size, config.hidden_size, dtype=config.torch_dtype
+            # ),
+            # nn.SiLU(),
+            # nn.Dropout(config.dropout),
+        )
+
+    def forward(self, inputs_embeds: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
+        return self.mlp(inputs_embeds)
+
+
 class LlamaInterpretorForReFTGeneration(nn.Module):
     def __init__(
         self,
@@ -508,7 +532,10 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
 
-        self.hypernetwork = LlamaInterpretorHypernetwork(config)
+        if config.hypernetwork_type == "lm":
+            self.hypernetwork = LlamaInterpretorHypernetwork(config)
+        else:
+            self.hypernetwork = SimpleMLPHypernetwork(config)
 
         logger.debug("Initializing ReFT generator")
         self.reft_generator = ReFTHypernetwork(
@@ -725,12 +752,12 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             :, current_layer_rel_idx
         ]
 
-        # Set the batch parameters for the DAS module
-        self.intervention_module.set_batch_parameters(rotation_matrix, weight_matrix)
-
         # Apply intervention, assuming LoReFT impl
         intervention_output = self.intervention_module(
-            hidden_states, intervention_positions=intervention_positions
+            hidden_states,
+            intervention_positions=intervention_positions,
+            batch_rotation=rotation_matrix,
+            batch_weights=weight_matrix,
         )
         mixed_output = intervention_output.mixed_output
         metrics = intervention_output.metrics
@@ -801,7 +828,7 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             )
 
         # Run target model for encoded hidden states
-        if base_hidden_states is None:
+        if base_hidden_states is None and self.config.hypernetwork_type == "lm":
             base_hidden_states = torch.stack(
                 self._run_target_model_for_encoded_hidden_states(
                     base_input_ids, base_attention_mask, base_position_ids
@@ -818,10 +845,14 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         # dimensions of target_hidden_states:
         # batch_size, token_sequence_length, num_layers = 13, resid_width = 768
         # Normalize along the last dimension
-        base_normalization_factors = base_hidden_states.norm(dim=-1, keepdim=True)
-        base_hidden_states = base_hidden_states / base_normalization_factors
+        if base_hidden_states is not None:
+            base_normalization_factors = base_hidden_states.norm(dim=-1, keepdim=True)
+            base_hidden_states = base_hidden_states / base_normalization_factors
 
-        if (base_intervention_mask.sum(dim=-1) == 0).any():
+        if (
+            base_intervention_mask is not None
+            and (base_intervention_mask.sum(dim=-1) == 0).any()
+        ):
             tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
             print("base_intervention_mask has zero row")
             zero_row_idx = (base_intervention_mask.sum(dim=-1) == 0).nonzero(
@@ -833,27 +864,29 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
             print(base_intervention_mask[zero_row_idx][0])
             raise
 
-        n_layer = base_hidden_states.shape[2]
-
-        collapsed_base_hidden_states = base_hidden_states.reshape(
-            base_hidden_states.shape[0],
-            base_hidden_states.shape[1] * base_hidden_states.shape[2],
-            base_hidden_states.shape[3],
-        )
-
-        collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(
-            1, 1, n_layer
-        )
-        collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
-            base_intervention_mask.shape[0],
-            base_intervention_mask.shape[1] * n_layer,
-        )
+        if base_hidden_states is not None:
+            n_layer = base_hidden_states.shape[2]
+            collapsed_base_hidden_states = base_hidden_states.reshape(
+                base_hidden_states.shape[0],
+                base_hidden_states.shape[1] * base_hidden_states.shape[2],
+                base_hidden_states.shape[3],
+            )
+            collapsed_base_attention_mask = base_intervention_mask.unsqueeze(-1).repeat(
+                1, 1, n_layer
+            )
+            collapsed_base_attention_mask = collapsed_base_attention_mask.reshape(
+                base_intervention_mask.shape[0],
+                base_intervention_mask.shape[1] * n_layer,
+            )
 
         inputs_embeds = self.target_model.model.embed_tokens(editor_input_ids)
         editor_input_ids = None
 
         # Project target states to compatibility with hypernet hidden size
-        if self.config.target_hidden_size != self.config.hidden_size:
+        if (
+            self.config.hypernetwork_type == "lm"
+            and self.config.target_hidden_size != self.config.hidden_size
+        ):
             collapsed_base_hidden_states = self.hypernetwork_adapter(
                 collapsed_base_hidden_states
             )
@@ -862,25 +895,25 @@ class LlamaInterpretorForReFTGeneration(nn.Module):
         intervention_layer_list = intervention_layers.cpu().tolist()
         for layer_idx in intervention_layer_list:
             # Patch intervention layer each time
-            self.hypernetwork.lm_head.intervention_layer = layer_idx
-            interpretor_output = self.hypernetwork(
-                input_ids=editor_input_ids,
-                inputs_embeds=inputs_embeds,
-                attention_mask=editor_attention_mask,
-                base_encoder_hidden_states=collapsed_base_hidden_states,
-                base_encoder_attention_mask=collapsed_base_attention_mask,
-                use_cache=False,
-            )
+            if self.config.hypernetwork_type == "lm":
+                self.hypernetwork.lm_head.intervention_layer = layer_idx
+                hypernet_hidden_states = self.hypernetwork(
+                    input_ids=editor_input_ids,
+                    inputs_embeds=inputs_embeds,
+                    attention_mask=editor_attention_mask,
+                    base_encoder_hidden_states=collapsed_base_hidden_states,
+                    base_encoder_attention_mask=collapsed_base_attention_mask,
+                    use_cache=False,
+                )[0]
+            else:
+                hypernet_hidden_states = self.hypernetwork(inputs_embeds=inputs_embeds)
 
-            hypernet_hidden_states = interpretor_output[0]
             layer_hidden_states.append(hypernet_hidden_states)
 
         # Stack along layer axis -> (B, L, P, H)
         hypernet_hidden_states = torch.stack(layer_hidden_states, dim=1)
 
-        if run_weight_generation and hasattr(
-            self.intervention_module, "set_batch_parameters"
-        ):
+        if run_weight_generation:
             # run hypernetwork to generate ReFT weights
             # each of shape (B, L, P, H, R)
             rotation_matrix, weight_matrix = self.reft_generator(
@@ -1217,7 +1250,7 @@ class LlamaInterpretorWithLearnedSource(nn.Module):
         return output
 
 
-class LlamaInterpretor(nn.Module):
+class LlamaInterpretorWithBaseSource(nn.Module):
     def __init__(
         self,
         config: LlamaInterpretorConfig,
