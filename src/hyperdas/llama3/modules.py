@@ -506,11 +506,6 @@ class SimpleMLPHypernetwork(nn.Module):
             nn.LayerNorm(config.intermediate_size, eps=1e-5),
             nn.SiLU(),
             nn.Dropout(config.dropout),
-            # nn.Linear(
-            #     config.intermediate_size, config.hidden_size, dtype=config.torch_dtype
-            # ),
-            # nn.SiLU(),
-            # nn.Dropout(config.dropout),
         )
 
     def forward(self, inputs_embeds: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
