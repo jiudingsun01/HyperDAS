@@ -206,6 +206,7 @@ def get_axbench_collate_fn(
     intervention_layers=None,
     intervention_positions=None,
 ):
+    # TODO need to implement grabbing reft parameters for supervised training/regression objective
     def collate_fn(batch):
         inputs, edit_instructions, targets = [], [], []
 
@@ -224,23 +225,35 @@ def get_axbench_collate_fn(
                 # Dummy since we are not using labels
                 targets.append("")
 
-        editor_input_ids = hypernet_tokenizer(
-            edit_instructions, return_tensors="pt", padding=True, truncation=True
-        )["input_ids"]
         is_causal = torch.tensor([1 for _ in batch])
-
         returned_dict = {
-            "editor_input_ids": editor_input_ids,
             "is_causal": is_causal,
-            **tokenize_text_inputs(hypernet_tokenizer, inputs, targets, prefix="base"),
         }
+
+        if hypernet_tokenizer:
+            editor_input_ids = hypernet_tokenizer(
+                edit_instructions, return_tensors="pt", padding=True, truncation=True
+            )["input_ids"]
+            returned_dict["editor_input_ids"] = editor_input_ids
+            returned_dict.update(
+                tokenize_text_inputs(hypernet_tokenizer, inputs, targets, prefix="base")
+            )
 
         if target_tokenizer:
             target_inputs = tokenize_text_inputs(
                 target_tokenizer, inputs, targets, prefix="target"
             )
-            returned_dict.pop("labels")
-            target_inputs.pop("target_intervention_mask")
+
+            if "editor_input_ids" not in returned_dict:
+                returned_dict["editor_input_ids"] = target_tokenizer(
+                    edit_instructions,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                )["input_ids"]
+
+            returned_dict.pop("labels", None)
+            target_inputs.pop("target_intervention_mask", None)
             returned_dict.update(target_inputs)
 
         # create intervention layer and positions

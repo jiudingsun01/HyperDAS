@@ -35,7 +35,7 @@ INTERPRETOR_CLS = {
 }
 
 
-class BaseInterpretorHypernetwork(nn.Module, ABC):
+class BaseInterpretor(nn.Module, ABC):
     def __init__(self, config: DictConfig, device):
         super().__init__()
         self.config = config
@@ -120,7 +120,7 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         pass
 
 
-class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
+class RavelInterpretor(BaseInterpretor):
     def __init__(self, config: DictConfig, device):
         super().__init__(config, device)
         self.interpretor_config.das_dimension = config.model.das_dimension
@@ -904,7 +904,7 @@ class RavelInterpretorHypernetwork(BaseInterpretorHypernetwork):
             )
 
 
-class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
+class SteeringInterpretor(BaseInterpretor):
     def __init__(self, config: DictConfig, device):
         super().__init__(config, device)
         # Define sizes of embedding tables for layers and positions
@@ -916,6 +916,9 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             )
             + 1
         )
+        self.interpretor_config.intervention_layer_list = (
+            config.model.intervention_layer
+        )
         self.interpretor_config.num_target_positions = (
             max(
                 parse_positions_varlen(
@@ -926,7 +929,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         )
 
         self.interpretor_config.target_hidden_size = config.model.target_hidden_size
-        self.interpretor_config.hypernetwork_type = config.model.hypernetwork_type
+        self.interpretor_config.use_hypernetwork = config.model.use_hypernetwork
         self.interpretor_config.top_k = config.model.top_k
         self.interpretor_config.reft_hypernetwork = config.model.reft_hypernetwork
         self.interpretor_config.reconstruction_loss_weight = (
@@ -936,9 +939,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         self.interpretor_config.objective = config.model.objective
 
         # Initialize model components
-        interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
-        if interpretor_cls is None:
-            raise ValueError("Invalid interpretor type")
+        interpretor_cls = INTERPRETOR_CLS[config.model.interpretor_type]
 
         with init_on_device(self.device):
             self.interpretor = interpretor_cls(
@@ -948,9 +949,6 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 compute_metrics=config.training.compute_metrics,
                 device=self.device,
             )
-
-        self.lm_judge_evaluator = None
-        self.winrate_evaluator = None
 
     def forward(
         self,
@@ -1022,19 +1020,28 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 sft_loss = (loss * loss_weight).mean()
 
             if self.config.model.reft_hypernetwork == "LsReFT":
-                non_topk_latents = _pred["extra_outputs"]["non_topk_latents"]
+                non_topk_latents = _pred.extra_outputs["non_topk_latents"]
+                sft_loss += (
+                    self.config.model.topk_sparsity_weight
+                    * non_topk_latents.norm(p=1, dim=-1).mean()
+                )
 
         if "reconstruction" in self.config.model.objective:
             mse_criterion = torch.nn.MSELoss(reduction="mean")
             similarity_criterion = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
             # (B, P, H)
-            predicted_weights = _pred["extra_outputs"]["weight_matrix"]
-            reconstruction_loss = None
+            predicted_weights = _pred.extra_outputs["weight_matrix"]
+            reconstruction_loss = mse_criterion(
+                predicted_weights, target_weights
+            ) + similarity_criterion(predicted_weights, target_weights)
 
-        total_loss = (
-            self.config.model.reconstruction_loss_weight * reconstruction_loss
-            + self.config.model.sft_loss_weight * sft_loss
-        )
+            total_loss = (
+                self.config.model.reconstruction_loss_weight * reconstruction_loss
+                + self.config.model.sft_loss_weight * sft_loss
+            )
+        else:
+            total_loss = sft_loss
+
         _pred["loss"] = total_loss
 
         return _pred
@@ -1072,17 +1079,17 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
 
             # Forward pass through model
             outputs = self.forward(
-                editor_input_ids=batch["editor_input_ids"],
-                base_input_ids=batch["base_input_ids"],
-                base_attention_mask=batch["base_attention_mask"],
-                base_intervention_mask=batch["base_intervention_mask"],
-                target_input_ids=batch.get("target_input_ids"),
-                target_attention_mask=batch.get("target_attention_mask"),
-                target_position_ids=batch.get("target_position_ids"),
-                intervention_layers=batch["intervention_layers"],
-                intervention_positions=batch["intervention_positions"],
-                labels=batch["labels"],
-                is_causal=batch["is_causal"],
+                editor_input_ids=batch.get("editor_input_ids", None),
+                base_input_ids=batch.get("base_input_ids", None),
+                base_attention_mask=batch.get("base_attention_mask", None),
+                base_intervention_mask=batch.get("base_intervention_mask", None),
+                target_input_ids=batch.get("target_input_ids", None),
+                target_attention_mask=batch.get("target_attention_mask", None),
+                target_position_ids=batch.get("target_position_ids", None),
+                intervention_layers=batch.get("intervention_layers", None),
+                intervention_positions=batch.get("intervention_positions", None),
+                labels=batch.get("labels", None),
+                is_causal=batch.get("is_causal", None),
             )
 
             # Get loss and perplexity
@@ -1209,17 +1216,21 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                     }
 
                     prediction = self.forward(
-                        editor_input_ids=batch["editor_input_ids"],
-                        base_input_ids=batch["base_input_ids"],
-                        base_attention_mask=batch["base_attention_mask"],
-                        base_intervention_mask=batch["base_intervention_mask"],
-                        target_input_ids=batch.get("target_input_ids"),
-                        target_attention_mask=batch.get("target_attention_mask"),
-                        target_position_ids=batch.get("target_position_ids"),
-                        intervention_layers=batch["intervention_layers"],
-                        intervention_positions=batch["intervention_positions"],
-                        labels=batch["labels"],
-                        is_causal=batch["is_causal"],
+                        editor_input_ids=batch.get("editor_input_ids", None),
+                        base_input_ids=batch.get("base_input_ids", None),
+                        base_attention_mask=batch.get("base_attention_mask", None),
+                        base_intervention_mask=batch.get(
+                            "base_intervention_mask", None
+                        ),
+                        target_input_ids=batch.get("target_input_ids", None),
+                        target_attention_mask=batch.get("target_attention_mask", None),
+                        target_position_ids=batch.get("target_position_ids", None),
+                        intervention_layers=batch.get("intervention_layers", None),
+                        intervention_positions=batch.get(
+                            "intervention_positions", None
+                        ),
+                        labels=batch.get("labels", None),
+                        is_causal=batch.get("is_causal", None),
                     )
 
                     training_loss = 0

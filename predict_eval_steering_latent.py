@@ -39,7 +39,7 @@ from logger import get_logger
 from src.common.utils import setup_tokenizer
 from src.hyperdas.data.axbench import get_axbench_collate_fn
 from src.hyperdas.llama3.model import (
-    SteeringInterpretorHypernetwork,
+    SteeringInterpretor,
 )
 from src.hyperdas.utils import calculate_perplexity
 
@@ -279,7 +279,7 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Load model instance onto device
     logger.info("Loading model instance")
-    model_instance = SteeringInterpretorHypernetwork(config, device)
+    model_instance = SteeringInterpretor(config, device)
 
     if config.training.load_trained_from is not None:
         logger.info(f"Loading model from {config.training.load_trained_from}")

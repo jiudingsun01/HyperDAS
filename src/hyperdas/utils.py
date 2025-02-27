@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from collections import namedtuple
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -146,7 +146,7 @@ class InterpretorModelOutputWithLearnedSource(InterpretorModelOutput):
 class InterventionModuleOutput(ModelOutput):
     output: torch.Tensor = None
     metrics: Dict[str, Any] = None
-    extra_outputs: Dict[str, torch.Tensor] = field(default_factory=dict)
+    extra_outputs: Dict[str, torch.Tensor] = None
 
 
 @contextlib.contextmanager

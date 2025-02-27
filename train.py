@@ -21,16 +21,16 @@ from src.common.utils import load_wrapper, setup_tokenizer
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
 from src.hyperdas.data.axbench import split_axbench16k_train_test_fast
 from src.hyperdas.llama3.model import (
-    RavelInterpretorHypernetwork,
-    SteeringInterpretorHypernetwork,
+    RavelInterpretor,
+    SteeringInterpretor,
 )
 from src.hyperdas.utils import NamedDataLoader
 
 logger = get_logger(__name__)
 
-HYPERNETWORK_CLS = {
-    "disentangle": RavelInterpretorHypernetwork,
-    "steering": SteeringInterpretorHypernetwork,
+INTEPRETOR_CLS = {
+    "disentangle": RavelInterpretor,
+    "steering": SteeringInterpretor,
 }
 
 
@@ -67,9 +67,13 @@ def run_experiment(
         )
         wandb.run.log_code("/workspace/HyperDAS/src/hyperdas/")
 
-    hypernet_tokenizer = setup_tokenizer(
-        model_name_or_path=config.model.name_or_path, max_length=config.model.max_length
-    )
+    if config.model.name_or_path is not None:
+        hypernet_tokenizer = setup_tokenizer(
+            model_name_or_path=config.model.name_or_path,
+            max_length=config.model.max_length,
+        )
+    else:
+        hypernet_tokenizer = None
     if (
         config.model.target_model_name_or_path
         and config.model.target_model_name_or_path != config.model.name_or_path
@@ -175,7 +179,7 @@ def run_experiment(
         ]
 
     # TODO(sid): refactor these into a proper registry system
-    hypernetwork = HYPERNETWORK_CLS[config.model.hypernetwork_type](config, device)
+    hypernetwork = INTEPRETOR_CLS[config.model.interpretor_type](config, device)
 
     if config.training.load_trained_from is not None:
         logger.info(f"Loading model from {config.training.load_trained_from}")

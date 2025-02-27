@@ -1,6 +1,6 @@
 defaults:
-  - /model/tinyllama_gemma2b_reft
-  - /dataset/concept500_2b_l10
+  - /model/gemma2b_lsreft
+  - /dataset/concept10_2b_l10
   - /training/base
   - /loss/base
   - /wandb_config/base
@@ -26,4 +26,4 @@ loss:
 
 wandb_config:
   project: HyperReFT_Steering
-  run_name: tinyllama_gemma2b_hyperloreft_steer
+  run_name: gemma2b_hyperlsreft_steer

@@ -2,14 +2,14 @@ defaults:
   - base
   - _self_
 
-subspace_module: "LoReFT"
+subspace_module: "BatchLsReFT"
 name_or_path: null
 target_model_name_or_path: "google/gemma-2b-it"
 target_hidden_size: 2048
 intervention_layer: [10]
 intervention_positions: "f7+l7"
 
-hypernetwork_type: "steering"
+use_hypernetwork: false
 interpretor_type: "steering"
 reft_hypernetwork: "LsReFT"
 top_k: 8

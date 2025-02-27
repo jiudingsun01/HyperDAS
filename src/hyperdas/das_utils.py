@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any, Dict, Literal, Mapping, Tuple
+from typing import Any, Dict, Literal, Mapping
 
 from src.hyperdas.utils import InterventionModuleOutput
 import torch
@@ -127,7 +127,7 @@ def _can_use_fast(subspaces):
     try:
         subspaces = torch.tensor(subspaces)
         row_same_val = torch.all(subspaces == subspaces[0], axis=1).all()
-    except:
+    except:  # noqa: E722
         tensorfiable = False
 
     return row_same_val and tensorfiable
@@ -301,7 +301,7 @@ class BoundlessRotatedSpaceIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"BoundlessRotatedSpaceIntervention()"
+        return "BoundlessRotatedSpaceIntervention()"
 
 
 class RotatedSpaceIntervention(
@@ -360,7 +360,7 @@ class RotatedSpaceIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"RotatedSpaceIntervention()"
+        return "RotatedSpaceIntervention()"
 
 
 class LowRankRotatedSpaceIntervention(
@@ -403,7 +403,7 @@ class LowRankRotatedSpaceIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"LowRankRotatedSpaceIntervention()"
+        return "LowRankRotatedSpaceIntervention()"
 
 
 class SelectiveLowRankRotatedSpaceIntervention(
@@ -466,7 +466,7 @@ class SelectiveLowRankRotatedSpaceIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"SelectiveLowRankRotatedSpaceIntervention()"
+        return "SelectiveLowRankRotatedSpaceIntervention()"
 
 
 class ReflectiveLowRankRotatedSpaceIntervention(
@@ -540,7 +540,7 @@ class ReflectiveLowRankRotatedSpaceIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"ReflectiveLowRankRotatedSpaceIntervention()"
+        return "ReflectiveLowRankRotatedSpaceIntervention()"
 
 
 class TopKSTE(torch.autograd.Function):
@@ -997,9 +997,8 @@ class QuasiProjectiveIntervention(
         # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
         # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange
         # (check this! as a sanity-check!)
-        out = InterventionModuleOutput(
-            output=output.to(base.dtype), metrics=metrics
-        )
+        out = InterventionModuleOutput(output=output.to(base.dtype), metrics=metrics)
+        out.extra_outputs = {}
         if return_basis:
             out.extra_outputs["selected_dictionary"] = selected_dictionary.to(
                 base.dtype

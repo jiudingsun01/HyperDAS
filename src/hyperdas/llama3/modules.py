@@ -124,12 +124,13 @@ class LlamaInterpretorConfig(LlamaConfig):
     num_target_layers: int = None
     num_target_positions: int = None
     dropout: float = 0.05
-    hypernetwork_type: Literal["lm", "mlp"] = "lm"
+    use_hypernetwork: bool = True
     top_k: int = 4
     reft_hypernetwork: Literal["LoReFT", "LsReFT"] = "LoReFT"
-    objective: Literal["sft", "reconstruction", "sft+reconstruction"] = "sft"
+    objective: Literal["sft", "sft+reconstruction"] = "sft"
     reconstruction_loss_weight: float = 1.0
     sft_loss_weight: float = 1.0
+    intervention_layer_list: List[int] = None
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -509,7 +510,9 @@ class SimpleMLPHypernetwork(nn.Module):
         self.config = config
         self.mlp = nn.Sequential(
             nn.Linear(
-                config.hidden_size, config.intermediate_size, dtype=config.torch_dtype
+                config.target_hidden_size,
+                config.intermediate_size,
+                dtype=config.torch_dtype,
             ),
             nn.LayerNorm(config.intermediate_size, eps=1e-5),
             nn.SiLU(),
@@ -535,18 +538,22 @@ class LlamaInterpretorForSteering(nn.Module):
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
 
-        if config.hypernetwork_type == "lm":
+        if config.use_hypernetwork:
             self.hypernetwork = LlamaInterpretorHypernetwork(config)
         else:
-            self.hypernetwork = SimpleMLPHypernetwork(config)
+            self.hypernetwork = None
 
         if config.reft_hypernetwork == "LsReFT":
-            assert config.num_target_model_layers == 1, "LsReFT only supports 1 layer"
+            assert (
+                len(config.intervention_layer_list) == 1
+            ), "LsReFT only supports 1 layer"
 
         logger.debug("Initializing ReFT hypernetwork")
         if config.reft_hypernetwork == "LoReFT":
             self.reft_generator = LoReFTHypernetwork(
-                hidden_size=config.hidden_size,
+                hidden_size=config.hidden_size
+                if config.use_hypernetwork
+                else config.target_hidden_size,
                 target_hidden_size=config.target_hidden_size,
                 num_target_layers=config.num_target_layers,
                 num_target_positions=config.num_target_positions,
@@ -558,14 +565,16 @@ class LlamaInterpretorForSteering(nn.Module):
             )
         elif config.reft_hypernetwork == "LsReFT":
             self.reft_generator = LsReFTHypernetwork(
-                hidden_size=config.hidden_size,
+                hidden_size=config.hidden_size
+                if config.use_hypernetwork
+                else config.target_hidden_size,
                 target_hidden_size=config.target_hidden_size,
                 num_target_layers=config.num_target_layers,
                 num_target_positions=config.num_target_positions,
                 rms_norm_eps=config.rms_norm_eps,
                 dtype=config.torch_dtype,
             )
-        if config.hypernetwork_type == "lm":
+        if config.use_hypernetwork:
             self.hypernetwork_adapter = nn.Linear(
                 config.target_hidden_size,
                 config.hidden_size,
@@ -800,7 +809,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 intervention_positions=intervention_positions,
                 batch_weights=weight_matrix,
             )
-        mixed_output = intervention_output.mixed_output
+        mixed_output = intervention_output.output
         metrics = intervention_output.metrics
         extra_outputs = intervention_output.extra_outputs
 
@@ -857,7 +866,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 .expand(editor_input_ids.shape[0], -1)
             )
 
-        if base_position_ids is None:
+        if base_position_ids is None and base_attention_mask is not None:
             # -1 for all the padding tokens and start from 0 for the rest
             base_position_ids = (
                 torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
@@ -870,7 +879,7 @@ class LlamaInterpretorForSteering(nn.Module):
             )
 
         # Run target model for encoded hidden states
-        if base_hidden_states is None and self.config.hypernetwork_type == "lm":
+        if base_hidden_states is None and self.config.use_hypernetwork:
             base_hidden_states = torch.stack(
                 self._run_target_model_for_encoded_hidden_states(
                     base_input_ids, base_attention_mask, base_position_ids
@@ -878,7 +887,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 dim=2,
             )
 
-        if base_intervention_mask is None:
+        if base_intervention_mask is None and base_input_ids is not None:
             if base_attention_mask is not None:
                 base_intervention_mask = base_attention_mask.clone()
             else:
@@ -926,7 +935,7 @@ class LlamaInterpretorForSteering(nn.Module):
 
         # Project target states to compatibility with hypernet hidden size
         if (
-            self.config.hypernetwork_type == "lm"
+            self.config.use_hypernetwork
             and self.config.target_hidden_size != self.config.hidden_size
         ):
             collapsed_base_hidden_states = self.hypernetwork_adapter(
@@ -935,9 +944,9 @@ class LlamaInterpretorForSteering(nn.Module):
 
         layer_hidden_states = []
         intervention_layer_list = intervention_layers.cpu().tolist()
-        for layer_idx in intervention_layer_list:
-            # Patch intervention layer each time
-            if self.config.hypernetwork_type == "lm":
+        if self.config.use_hypernetwork:
+            for layer_idx in intervention_layer_list:
+                # Patch intervention layer each time
                 self.hypernetwork.lm_head.intervention_layer = layer_idx
                 hypernet_hidden_states = self.hypernetwork(
                     input_ids=editor_input_ids,
@@ -947,13 +956,14 @@ class LlamaInterpretorForSteering(nn.Module):
                     base_encoder_attention_mask=collapsed_base_attention_mask,
                     use_cache=False,
                 )[0]
-            else:
-                hypernet_hidden_states = self.hypernetwork(inputs_embeds=inputs_embeds)
 
-            layer_hidden_states.append(hypernet_hidden_states)
-
-        # Stack along layer axis -> (B, L, P, H)
-        hypernet_hidden_states = torch.stack(layer_hidden_states, dim=1)
+                layer_hidden_states.append(hypernet_hidden_states)
+            # Stack along layer axis -> (B, L, P, H)
+            hypernet_hidden_states = torch.stack(layer_hidden_states, dim=1)
+        else:
+            hypernet_hidden_states = inputs_embeds.unsqueeze(1).repeat(
+                1, intervention_layers.shape[0], 1, 1
+            )
 
         if run_weight_generation and self.config.reft_hypernetwork == "LoReFT":
             # run hypernetwork to generate ReFT weights
@@ -1021,6 +1031,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 logits=logits,
             )
             output.metrics = metrics
+            output.extra_outputs = {}
 
             if self.config.reft_hypernetwork == "LsReFT":
                 output.extra_outputs["non_topk_latents"] = extra_outputs[

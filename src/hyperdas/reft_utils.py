@@ -1,7 +1,6 @@
 from collections import OrderedDict
 from typing import Tuple
 
-import einops
 import torch
 import torch.nn as nn
 from transformers.activations import ACT2FN
@@ -323,20 +322,17 @@ class BatchLsReftIntervention(nn.Module):
         batch_size = base.shape[0]
         batch_indices = torch.arange(batch_size, device=base.device).unsqueeze(-1)
         # (B, P, H)
-        intervention_states = base[batch_indices, intervention_positions].unsqueeze(2)
+        intervention_states = base[batch_indices, intervention_positions]
         # (B, P, H) dot product
-        detect_latent = self.act_fn(
-            einops.einsum("bph,bph->bph", intervention_states, batch_weights)
-        )
+        detect_latent = self.act_fn(intervention_states * batch_weights)
         # (B, P, K)
-        topk_indices, top_k_values = torch.topk(detect_latent, self.top_k, dim=-1)
-        mask = torch.ones_like(detect_latent, dtype=torch.bool)
-        mask[batch_indices, topk_indices, topk_indices] = False
-        non_topk_latents = detect_latent.masked_select(mask).view(
-            batch_size, -1, self.hidden_dim - self.top_k
-        )
+        topk_values = detect_latent.topk(self.top_k, dim=-1)[0]
+        # (B, P, H-K)
+        non_topk_latents = detect_latent.topk(
+            self.hidden_dim - self.top_k, dim=-1, largest=False
+        )[0]
         # (B, P, 1)
-        norm_values = top_k_values.norm(p=1, dim=-1).unsqueeze(-1)
+        norm_values = topk_values.norm(p=1, dim=-1).unsqueeze(-1)
 
         # Additive intervention
         intervened_output = base.clone()

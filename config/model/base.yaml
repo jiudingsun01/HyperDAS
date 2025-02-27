@@ -26,5 +26,5 @@ hat_matrix: false
 max_length: 1024
 target_hidden_size: null
 
-intepretor_type: "regular"
-hypernetwork_type: "disentangle"
+interpretor_type: "regular"
+use_hypernetwork: true
