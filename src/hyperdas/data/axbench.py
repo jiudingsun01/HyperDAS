@@ -184,6 +184,8 @@ def tokenize_text_inputs(
 
 
 def parse_positions_varlen(positions: str, seq_len: int):
+    if positions == "all":
+        return np.arange(seq_len).tolist()
     if "+" in positions:
         first_n = int(positions.split("+")[0].strip("f"))
         last_n = int(positions.split("+")[1].strip("l"))

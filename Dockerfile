@@ -18,15 +18,10 @@ COPY requirements.txt /tmp/
 RUN uv pip install --system --no-cache-dir --no-upgrade -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt || true
 
-# Install PyTorch nightly only for gh200 variant
-RUN if [ "${VARIANT}" = "gh200" ]; then \
-uv pip install --system --force-reinstall --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126; \
-fi
-
 # If python package exists, install it
 RUN python setup.py develop || true \
-    && uv pip install --system --no-cache-dir -e . || true \
-    && uv pip install --system ipdb
+    && uv pip install --system --no-cache-dir --no-upgrade -e . || true \
+    && uv pip install --system --no-cache-dir --no-upgrade ipdb
 
 COPY scripts/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh

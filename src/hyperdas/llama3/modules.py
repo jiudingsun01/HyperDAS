@@ -1016,7 +1016,6 @@ class LlamaInterpretorForSteering(nn.Module):
                 # THE END OF `layer` AS A SIDE EFFECT)
                 target_result = self.target_model(
                     input_ids=target_input_ids,
-                    attention_mask=target_attention_mask,
                     position_ids=target_position_ids,
                     output_hidden_states=True,
                 )
