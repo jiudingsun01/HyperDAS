@@ -22,7 +22,7 @@ from ..utils import InterpretorModelOutput, NamedDataLoader, init_on_device
 from .modules import (
     LlamaInterpretorWithBaseSource,
     LlamaInterpretorConfig,
-    LlamaInterpretorForReFTGeneration,
+    LlamaInterpretorForSteering,
     LlamaInterpretorWithLearnedSource,
 )
 
@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 INTERPRETOR_CLS = {
     "regular": LlamaInterpretorWithBaseSource,
     "learned_source": LlamaInterpretorWithLearnedSource,
-    "reft": LlamaInterpretorForReFTGeneration,
+    "steering": LlamaInterpretorForSteering,
 }
 
 
@@ -41,9 +41,12 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         self.config = config
         self.device = device
 
-        self.interpretor_config: LlamaInterpretorConfig = (
-            LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
-        )
+        if config.model.name_or_path is None:
+            self.interpretor_config: LlamaInterpretorConfig = LlamaInterpretorConfig()
+        else:
+            self.interpretor_config: LlamaInterpretorConfig = (
+                LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
+            )
 
         # Basic model config
         self.interpretor_config.name_or_path = config.model.name_or_path
@@ -59,10 +62,13 @@ class BaseInterpretorHypernetwork(nn.Module, ABC):
         )
 
         # Tokenizer setup
-        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if config.model.name_or_path is None:
+            self.tokenizer = None
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
+            self.tokenizer.padding_side = "left"
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         self.target_model_tokenizer = AutoTokenizer.from_pretrained(
             config.model.target_model_name_or_path
@@ -918,9 +924,16 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             )
             + 1
         )
+
         self.interpretor_config.target_hidden_size = config.model.target_hidden_size
         self.interpretor_config.hypernetwork_type = config.model.hypernetwork_type
-        self.rotate_lr = config.training.get("rotate_lr", 1e-3)
+        self.interpretor_config.top_k = config.model.top_k
+        self.interpretor_config.reft_hypernetwork = config.model.reft_hypernetwork
+        self.interpretor_config.reconstruction_loss_weight = (
+            config.model.reconstruction_loss_weight
+        )
+        self.interpretor_config.sft_loss_weight = config.model.sft_loss_weight
+        self.interpretor_config.objective = config.model.objective
 
         # Initialize model components
         interpretor_cls = INTERPRETOR_CLS.get(config.model.intepretor_type, None)
@@ -951,6 +964,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
         intervention_layers: Optional[torch.Tensor] = None,
         intervention_positions: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        target_weights: Optional[torch.FloatTensor] = None,
         is_causal: Optional[torch.BoolTensor] = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
@@ -969,7 +983,7 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
             intervention_positions=intervention_positions,
         )
 
-        if labels is not None:
+        if labels is not None and "sft" in self.config.model.objective:
             log_prob_predictions = torch.nn.functional.log_softmax(
                 _pred.logits.reshape(-1, _pred.logits.shape[-1]),
                 dim=1,
@@ -1005,9 +1019,23 @@ class SteeringInterpretorHypernetwork(BaseInterpretorHypernetwork):
                 criterion = torch.nn.CrossEntropyLoss(reduction="none")
                 loss = criterion(log_prob_predictions, labels.long())
 
-                loss = (loss * loss_weight).mean()
+                sft_loss = (loss * loss_weight).mean()
 
-            _pred["loss"] = loss
+            if self.config.model.reft_hypernetwork == "LsReFT":
+                non_topk_latents = _pred["extra_outputs"]["non_topk_latents"]
+
+        if "reconstruction" in self.config.model.objective:
+            mse_criterion = torch.nn.MSELoss(reduction="mean")
+            similarity_criterion = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
+            # (B, P, H)
+            predicted_weights = _pred["extra_outputs"]["weight_matrix"]
+            reconstruction_loss = None
+
+        total_loss = (
+            self.config.model.reconstruction_loss_weight * reconstruction_loss
+            + self.config.model.sft_loss_weight * sft_loss
+        )
+        _pred["loss"] = total_loss
 
         return _pred
 

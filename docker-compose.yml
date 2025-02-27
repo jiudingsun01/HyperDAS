@@ -12,6 +12,7 @@ services:
         - GIT_EMAIL=${GIT_EMAIL}
         - GIT_NAME=${GIT_NAME}
         - PROJECT_NAME=${PROJECT_NAME}
+        - VARIANT=${VARIANT}
     volumes:
       - .:/workspace/${PROJECT_NAME}
       - ./assets:/workspace/${PROJECT_NAME}/assets

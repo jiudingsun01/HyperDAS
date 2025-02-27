@@ -14,4 +14,4 @@ intervention_layer: [10]
 intervention_positions: "f7+l7"
 
 hypernetwork_type: "steering"
-intepretor_type: "reft"
+interpretor_type: "steering"
