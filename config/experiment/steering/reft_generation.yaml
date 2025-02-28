@@ -1,6 +1,6 @@
 defaults:
   - /model/gemma2b_lsreft
-  - /dataset/concept10_2b_l10
+  - /dataset/concept500_2b_l10
   - /training/base
   - /loss/base
   - /wandb_config/base
@@ -20,6 +20,7 @@ training:
 model:
   max_length: 256
   das_dimension: 1
+  objective: reconstruction
 
 loss:
   return_penalty: false

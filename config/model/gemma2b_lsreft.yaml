@@ -4,8 +4,7 @@ defaults:
 
 subspace_module: "BatchLsReFT"
 name_or_path: null
-target_model_name_or_path: "google/gemma-2b-it"
-target_hidden_size: 2048
+target_model_name_or_path: "google/gemma-2-2b-it"
 intervention_layer: [10]
 intervention_positions: "f7+l7"
 
@@ -17,3 +16,5 @@ reconstruction_loss_weight: 1.0
 sft_loss_weight: 1.0
 topk_sparsity_weight: 1.0
 objective: "reconstruction"
+# For position axis
+weight_sharing: true

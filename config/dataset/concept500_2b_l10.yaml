@@ -3,7 +3,8 @@ defaults:
   - _self_ # Ensure dataset-specific configs override base
 
 train_path: "experiments/axbench/data/concept500_2b_l10"
-test_path: "experiments/axbench/data/concept500_2b_l10"
+test_path: "experiments/axbench/data/concept10_2b_l10"
+reconstruction_path: "axbench/axbench/results/prod_2b_l10_concept500_lsreft/train"
 dataset_type: axbench
 axbench_mode: steering_train
 split_by: concept

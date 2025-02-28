@@ -937,6 +937,7 @@ class SteeringInterpretor(BaseInterpretor):
         )
         self.interpretor_config.sft_loss_weight = config.model.sft_loss_weight
         self.interpretor_config.objective = config.model.objective
+        self.interpretor_config.weight_sharing = config.model.weight_sharing
 
         # Initialize model components
         interpretor_cls = INTERPRETOR_CLS[config.model.interpretor_type]
@@ -949,6 +950,41 @@ class SteeringInterpretor(BaseInterpretor):
                 compute_metrics=config.training.compute_metrics,
                 device=self.device,
             )
+
+    def save_model(self, save_dir):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        if self.interpretor.hypernetwork is not None:
+            torch.save(
+                self.interpretor.hypernetwork.state_dict(),
+                os.path.join(save_dir, "hypernetwork.pt"),
+            )
+        if self.interpretor.steering_hypernetwork is not None:
+            torch.save(
+                self.interpretor.steering_hypernetwork.state_dict(),
+                os.path.join(save_dir, "steering_hypernetwork.pt"),
+            )
+        torch.save(
+            self.interpretor.intervention_module.state_dict(),
+            os.path.join(save_dir, "intervenable.pt"),
+        )
+
+    def load_model(self, load_dir):
+        if self.interpretor.hypernetwork is not None:
+            self.interpretor.hypernetwork.load_state_dict(
+                torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
+            )
+        if self.interpretor.steering_hypernetwork is not None:
+            self.interpretor.steering_hypernetwork.load_state_dict(
+                torch.load(
+                    os.path.join(load_dir, "steering_hypernetwork.pt"),
+                    weights_only=True,
+                )
+            )
+        self.interpretor.intervention_module.load_state_dict(
+            torch.load(os.path.join(load_dir, "intervenable.pt"), weights_only=True)
+        )
 
     def forward(
         self,
@@ -1012,6 +1048,7 @@ class SteeringInterpretor(BaseInterpretor):
             if is_causal is None:
                 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
                 loss = criterion(log_prob_predictions, labels.long())
+                sft_loss = loss
             else:
                 loss_weight = loss_weight[label_indices]
                 criterion = torch.nn.CrossEntropyLoss(reduction="none")
@@ -1019,31 +1056,54 @@ class SteeringInterpretor(BaseInterpretor):
 
                 sft_loss = (loss * loss_weight).mean()
 
+            _pred["sft_loss"] = sft_loss
+
             if self.config.model.reft_hypernetwork == "LsReFT":
                 non_topk_latents = _pred.extra_outputs["non_topk_latents"]
-                sft_loss += (
+                sparsity_loss = (
                     self.config.model.topk_sparsity_weight
                     * non_topk_latents.norm(p=1, dim=-1).mean()
                 )
+                sft_loss += sparsity_loss
+
+                _pred["sparsity_loss"] = sparsity_loss
 
         if "reconstruction" in self.config.model.objective:
             mse_criterion = torch.nn.MSELoss(reduction="mean")
             similarity_criterion = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
             # (B, P, H)
             predicted_weights = _pred.extra_outputs["weight_matrix"]
-            reconstruction_loss = mse_criterion(
-                predicted_weights, target_weights
-            ) + similarity_criterion(predicted_weights, target_weights)
-
-            total_loss = (
-                self.config.model.reconstruction_loss_weight * reconstruction_loss
-                + self.config.model.sft_loss_weight * sft_loss
+            # TODO(sid): squeeze for now but support multilayer/position target regression soon
+            cosine_loss = (
+                1
+                - similarity_criterion(
+                    predicted_weights.squeeze().float(),
+                    target_weights,
+                ).mean()
             )
+            reconstruction_loss = (
+                mse_criterion(predicted_weights.squeeze().float(), target_weights)
+                + cosine_loss
+            )
+
+            _pred["cosine_loss"] = cosine_loss
+
+            if self.config.model.objective == "sft+reconstruction":
+                total_loss = (
+                    self.config.model.reconstruction_loss_weight * reconstruction_loss
+                    + self.config.model.sft_loss_weight * sft_loss
+                )
+                _pred["reconstruction_loss"] = (
+                    self.config.model.reconstruction_loss_weight * reconstruction_loss
+                )
+                _pred["sft_loss"] = self.config.model.sft_loss_weight * sft_loss
+            else:
+                _pred["reconstruction_loss"] = reconstruction_loss
+                total_loss = reconstruction_loss
         else:
             total_loss = sft_loss
 
         _pred["loss"] = total_loss
-
         return _pred
 
     @torch.no_grad()
@@ -1064,8 +1124,8 @@ class SteeringInterpretor(BaseInterpretor):
         Compute average loss and perplexity metrics for test data.
         Returns dict with metrics.
         """
-        total_loss = 0
-        total_perplexity = 0
+        metrics = {"loss": 0, "perplexity": 0}
+        loss_accumulators = {}
         num_batches = 0
 
         for step, batch in enumerate(
@@ -1086,25 +1146,35 @@ class SteeringInterpretor(BaseInterpretor):
                 target_input_ids=batch.get("target_input_ids", None),
                 target_attention_mask=batch.get("target_attention_mask", None),
                 target_position_ids=batch.get("target_position_ids", None),
+                target_weights=batch.get("reconstruction_targets", None),
                 intervention_layers=batch.get("intervention_layers", None),
                 intervention_positions=batch.get("intervention_positions", None),
                 labels=batch.get("labels", None),
                 is_causal=batch.get("is_causal", None),
             )
 
-            # Get loss and perplexity
             loss = outputs["loss"]
             perplexity = torch.exp(loss)
 
-            total_loss += loss.item()
-            total_perplexity += perplexity.item()
+            metrics["loss"] += loss.item()
+            metrics["perplexity"] += perplexity.item()
+
+            # Track all loss terms in the outputs
+            for key, value in outputs.items():
+                if key.endswith("_loss") and isinstance(value, torch.Tensor):
+                    if key not in loss_accumulators:
+                        loss_accumulators[key] = 0
+                    loss_accumulators[key] += value.item()
+
             num_batches += 1
 
         # Calculate averages
-        avg_loss = total_loss / num_batches
-        avg_perplexity = total_perplexity / num_batches
+        metrics["loss"] /= num_batches
+        metrics["perplexity"] /= num_batches
 
-        return {"loss": avg_loss, "perplexity": avg_perplexity}
+        # Add all accumulated loss terms to metrics
+        for key, value in loss_accumulators.items():
+            metrics[key] = value / num_batches
 
     def run_train(
         self,
@@ -1225,6 +1295,7 @@ class SteeringInterpretor(BaseInterpretor):
                         target_input_ids=batch.get("target_input_ids", None),
                         target_attention_mask=batch.get("target_attention_mask", None),
                         target_position_ids=batch.get("target_position_ids", None),
+                        target_weights=batch.get("reconstruction_targets", None),
                         intervention_layers=batch.get("intervention_layers", None),
                         intervention_positions=batch.get(
                             "intervention_positions", None
@@ -1242,6 +1313,11 @@ class SteeringInterpretor(BaseInterpretor):
                     total_grad_norm = nn.utils.clip_grad_norm_(
                         self.parameters(), max_grad_norm
                     )
+
+                    loss_metrics = {}
+                    for key, value in prediction.items():
+                        if key.endswith("_loss") and isinstance(value, torch.Tensor):
+                            loss_metrics[f"train_batch_{key}"] = value.item()
 
                     # Calculate gradient norms for all modules
                     grad_norm_metrics = {}
@@ -1282,6 +1358,7 @@ class SteeringInterpretor(BaseInterpretor):
                         "learning_rate": self.opt.param_groups[0]["lr"],
                         **prediction.metrics,
                         **grad_norm_metrics,
+                        **loss_metrics,
                     }
 
                     if wandb.run:

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
 import warnings
+from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
 from transformers import (
@@ -127,10 +128,11 @@ class LlamaInterpretorConfig(LlamaConfig):
     use_hypernetwork: bool = True
     top_k: int = 4
     reft_hypernetwork: Literal["LoReFT", "LsReFT"] = "LoReFT"
-    objective: Literal["sft", "sft+reconstruction"] = "sft"
+    objective: Literal["sft", "reconstruction", "sft+reconstruction"] = "sft"
     reconstruction_loss_weight: float = 1.0
     sft_loss_weight: float = 1.0
     intervention_layer_list: List[int] = None
+    weight_sharing: bool = False
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -537,6 +539,7 @@ class LlamaInterpretorForSteering(nn.Module):
         self.config = config
         target_model_cfg = AutoConfig.from_pretrained(target_model_name_or_path)
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
+        self.config.target_hidden_size = target_model_cfg.hidden_size
 
         if config.use_hypernetwork:
             self.hypernetwork = LlamaInterpretorHypernetwork(config)
@@ -544,13 +547,13 @@ class LlamaInterpretorForSteering(nn.Module):
             self.hypernetwork = None
 
         if config.reft_hypernetwork == "LsReFT":
-            assert (
-                len(config.intervention_layer_list) == 1
-            ), "LsReFT only supports 1 layer"
+            assert len(config.intervention_layer_list) == 1, (
+                "LsReFT only supports 1 layer"
+            )
 
         logger.debug("Initializing ReFT hypernetwork")
         if config.reft_hypernetwork == "LoReFT":
-            self.reft_generator = LoReFTHypernetwork(
+            self.steering_hypernetwork = LoReFTHypernetwork(
                 hidden_size=config.hidden_size
                 if config.use_hypernetwork
                 else config.target_hidden_size,
@@ -562,9 +565,10 @@ class LlamaInterpretorForSteering(nn.Module):
                 rms_norm_eps=config.rms_norm_eps,
                 dropout=config.attention_dropout,
                 dtype=config.torch_dtype,
+                weight_sharing=config.weight_sharing,
             )
         elif config.reft_hypernetwork == "LsReFT":
-            self.reft_generator = LsReFTHypernetwork(
+            self.steering_hypernetwork = LsReFTHypernetwork(
                 hidden_size=config.hidden_size
                 if config.use_hypernetwork
                 else config.target_hidden_size,
@@ -573,7 +577,10 @@ class LlamaInterpretorForSteering(nn.Module):
                 num_target_positions=config.num_target_positions,
                 rms_norm_eps=config.rms_norm_eps,
                 dtype=config.torch_dtype,
+                weight_sharing=config.weight_sharing,
             )
+        else:
+            self.steering_hypernetwork = None
         if config.use_hypernetwork:
             self.hypernetwork_adapter = nn.Linear(
                 config.target_hidden_size,
@@ -581,7 +588,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 dtype=config.torch_dtype,
             )
 
-        logger.debug("Finished initializing ReFT generator")
+        logger.debug("Finished initializing steering hypernetwork")
         self.target_model = AutoModelForCausalLM.from_pretrained(
             target_model_name_or_path,
             torch_dtype=config.torch_dtype,
@@ -817,24 +824,24 @@ class LlamaInterpretorForSteering(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: Optional[torch.Tensor] = None,
-        editor_attention_mask: Optional[torch.Tensor] = None,
-        base_input_ids: Optional[torch.Tensor] = None,
-        base_attention_mask: Optional[torch.Tensor] = None,
-        base_intervention_mask: Optional[torch.Tensor] = None,
-        base_hidden_states: Optional[torch.Tensor] = None,
-        base_position_ids: Optional[torch.Tensor] = None,
-        target_input_ids: Optional[torch.Tensor] = None,
-        target_attention_mask: Optional[torch.Tensor] = None,
-        target_position_ids: Optional[torch.Tensor] = None,
-        intervention_layers: Optional[List[int]] = None,
-        intervention_positions: Optional[torch.LongTensor] = None,
+        editor_input_ids: torch.Tensor | None = None,
+        editor_attention_mask: torch.Tensor | None = None,
+        base_input_ids: torch.Tensor | None = None,
+        base_attention_mask: torch.Tensor | None = None,
+        base_intervention_mask: torch.Tensor | None = None,
+        base_hidden_states: torch.Tensor | None = None,
+        base_position_ids: torch.Tensor | None = None,
+        target_input_ids: torch.Tensor | None = None,
+        target_attention_mask: torch.Tensor | None = None,
+        target_position_ids: torch.Tensor | None = None,
+        intervention_layers: list[int] | None = None,
+        intervention_positions: torch.LongTensor | None = None,
         run_weight_generation: bool = True,
         generation: bool = False,
         **kwargs,
     ) -> InterpretorModelOutput:
         if intervention_layers is None:
-            intervention_layers = self.config.intervention_layer
+            intervention_layers = OmegaConf.to_container(self.config.intervention_layer)
 
         if intervention_positions is None:
             intervention_positions = (
@@ -846,24 +853,16 @@ class LlamaInterpretorForSteering(nn.Module):
             )
 
         if isinstance(intervention_layers, int):
-            intervention_layers = (
-                torch.tensor(
-                    [intervention_layers],
-                    dtype=torch.long,
-                    device=editor_input_ids.device,
-                )
-                .unsqueeze(0)
-                .expand(editor_input_ids.shape[0], -1)
+            intervention_layers = torch.tensor(
+                [intervention_layers],
+                dtype=torch.long,
+                device=editor_input_ids.device,
             )
         elif isinstance(intervention_layers, list):
-            intervention_layers = (
-                torch.tensor(
-                    intervention_layers,
-                    dtype=torch.long,
-                    device=editor_input_ids.device,
-                )
-                .unsqueeze(0)
-                .expand(editor_input_ids.shape[0], -1)
+            intervention_layers = torch.tensor(
+                intervention_layers,
+                dtype=torch.long,
+                device=editor_input_ids.device,
             )
 
         if base_position_ids is None and base_attention_mask is not None:
@@ -872,7 +871,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
             )
 
-        if target_position_ids is None:
+        if target_position_ids is None and self.config.use_hypernetwork:
             # -1 for all the padding tokens and start from 0 for the rest
             target_position_ids = (
                 torch.cumsum(target_attention_mask, dim=1) * target_attention_mask - 1
@@ -943,7 +942,8 @@ class LlamaInterpretorForSteering(nn.Module):
             )
 
         layer_hidden_states = []
-        intervention_layer_list = intervention_layers.cpu().tolist()
+        if isinstance(intervention_layers, torch.Tensor):
+            intervention_layer_list = intervention_layers.cpu().tolist()
         if self.config.use_hypernetwork:
             for layer_idx in intervention_layer_list:
                 # Patch intervention layer each time
@@ -968,14 +968,14 @@ class LlamaInterpretorForSteering(nn.Module):
         if run_weight_generation and self.config.reft_hypernetwork == "LoReFT":
             # run hypernetwork to generate ReFT weights
             # each of shape (B, L, P, H, R)
-            rotation_matrix, weight_matrix = self.reft_generator(
+            rotation_matrix, weight_matrix = self.steering_hypernetwork(
                 hypernet_hidden_states, intervention_layers, intervention_positions
             )
             self._temp_global_cache["rotation_matrix"] = rotation_matrix
             self._temp_global_cache["weight_matrix"] = weight_matrix
             self._temp_global_cache["hypernet_hidden_states"] = hypernet_hidden_states
         elif run_weight_generation and self.config.reft_hypernetwork == "LsReFT":
-            weight_matrix = self.reft_generator(
+            weight_matrix = self.steering_hypernetwork(
                 hypernet_hidden_states, intervention_layers, intervention_positions
             )
             self._temp_global_cache["weight_matrix"] = weight_matrix
@@ -993,11 +993,11 @@ class LlamaInterpretorForSteering(nn.Module):
                 nonlocal extra_outputs
 
                 self._temp_global_cache["current_layer_rel_idx"] = current_layer_rel_idx
-                mixed_output, metrics, extra_outputs = self._apply_intervention(
+                output = self._apply_intervention(
                     output[0], intervention_positions=intervention_positions
                 )
-
-                output[0][:] += mixed_output
+                metrics, extra_outputs = output.metrics, output.extra_outputs
+                output[0][:] += output.mixed_output
 
             # Now editing the target model
             if intervention_layers is None:
@@ -1011,28 +1011,32 @@ class LlamaInterpretorForSteering(nn.Module):
                     for rel_idx, layer_idx in enumerate(intervention_layer_list)
                 ]
 
-            with add_fwd_hooks(hooks):
-                # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
-                # THE END OF `layer` AS A SIDE EFFECT)
-                target_result = self.target_model(
-                    input_ids=target_input_ids,
-                    position_ids=target_position_ids,
-                    output_hidden_states=True,
-                )
+            if target_input_ids is not None:
+                with add_fwd_hooks(hooks):
+                    # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
+                    # THE END OF `layer` AS A SIDE EFFECT)
+                    target_result = self.target_model(
+                        input_ids=target_input_ids,
+                        position_ids=target_position_ids,
+                        output_hidden_states=True,
+                    )
 
-            logits = target_result.logits
+                logits = target_result.logits
+            else:
+                logits = None
 
             # Clear cache of outdated entries in next forward pass to save memory
             # only during training in inference we manually handle
             self._temp_global_cache.clear()
 
-            output = InterpretorModelOutput(
-                logits=logits,
-            )
+            output = InterpretorModelOutput(logits=logits)
             output.metrics = metrics
             output.extra_outputs = {}
 
-            if self.config.reft_hypernetwork == "LsReFT":
+            if (
+                self.config.reft_hypernetwork == "LsReFT"
+                and "sft" in self.config.objective
+            ):
                 output.extra_outputs["non_topk_latents"] = extra_outputs[
                     "non_topk_latents"
                 ]
@@ -1647,7 +1651,7 @@ class LlamaInterpretorWithBaseSource(nn.Module):
                     )
 
                 if isinstance(mixed_output, InterventionModuleOutput):
-                    mixed_output = mixed_output.output
+                    mixed_output = mixed_output.mixed_output
 
                 output[0][:] += mixed_output - base_hidden_states
             else:

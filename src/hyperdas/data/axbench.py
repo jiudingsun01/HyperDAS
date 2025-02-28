@@ -4,10 +4,13 @@ from typing import Literal
 
 import datasets
 import numpy as np
+import pandas as pd
 import torch
 
+from axbench.scripts.evaluate import load_jsonl
 
-def split_axbench16k_train_test(axbench_train_set, split_by="concept", train_ratio=0.8):
+
+def split_axbench_train_test(axbench_train_set, split_by="concept", train_ratio=0.8):
     axbench_train_set = [d for d in axbench_train_set if d["category"] == "positive"]
 
     if split_by == "concept":
@@ -35,7 +38,7 @@ def split_axbench16k_train_test(axbench_train_set, split_by="concept", train_rat
     return train_set, test_set
 
 
-def split_axbench16k_train_test_fast(
+def split_axbench_train_test_fast(
     dataset: datasets.Dataset,
     split_by="concept",
     train_ratio=0.8,
@@ -70,7 +73,6 @@ def split_axbench16k_train_test_fast(
     dataset = dataset.filter(lambda x: x["category"] == "positive", num_proc=num_proc)
 
     if split_by == "concept":
-        # Get unique concept IDs using multiprocessing
         concept_ids = dataset.unique("concept_id")
 
         # Select train concepts
@@ -106,6 +108,132 @@ def split_axbench16k_train_test_fast(
     if cache_dir:
         train_dataset.save_to_disk(f"{cache_dir}/train_{cache_key}")
         test_dataset.save_to_disk(f"{cache_dir}/test_{cache_key}")
+
+    return train_dataset, test_dataset
+
+
+def split_axbench_reconstruction_train_test(
+    reconstruction_data_path: str,
+    split_by="concept",
+    train_ratio=0.8,
+    seed=42,
+):
+    """Split an axbench reconstruction dataset into train and test sets using HF Dataset operations."""
+    lsreft = torch.load(f"{reconstruction_data_path}/LsReFT_weight.pt")
+    lsreft_metadata = load_jsonl(f"{reconstruction_data_path}/metadata.jsonl")
+    assert lsreft.shape[0] == len(lsreft_metadata), "Length mismatch"
+    # Create a mapping from concept_id to subspace tensor
+    concept_to_subspace = {}
+    for idx, metadata_entry in enumerate(lsreft_metadata):
+        concept_id = metadata_entry["concept_id"]
+        concept_to_subspace[concept_id] = lsreft[idx]
+
+    for metadata_entry in lsreft_metadata:
+        metadata_entry["subspace"] = concept_to_subspace[metadata_entry["concept_id"]]
+
+    if split_by == "concept":
+        # Get unique concept IDs
+        concept_ids = set(entry["concept_id"] for entry in lsreft_metadata)
+
+        random.seed(seed)
+        train_concept_ids = set(
+            random.sample(list(concept_ids), int(len(concept_ids) * train_ratio))
+        )
+
+        train_dataset = [
+            entry
+            for entry in lsreft_metadata
+            if entry["concept_id"] in train_concept_ids
+        ]
+        test_dataset = [
+            entry
+            for entry in lsreft_metadata
+            if entry["concept_id"] not in train_concept_ids
+        ]
+
+    elif split_by == "example":
+        raise NotImplementedError("Example-based splitting not implemented")
+
+    elif split_by == "random":
+        random.seed(seed)
+        shuffled_data = lsreft_metadata.copy()
+        random.shuffle(shuffled_data)
+
+        split_idx = int(len(shuffled_data) * train_ratio)
+        train_dataset = shuffled_data[:split_idx]
+        test_dataset = shuffled_data[split_idx:]
+
+    # Convert to HF datasets, ensuring tensors are preserved
+    features = datasets.Features(
+        {
+            "concept_id": datasets.Value("string"),
+            "concept": datasets.Value("string"),
+            "ref": datasets.Value("string"),
+            "concept_genres_map": datasets.Value("string"),
+            "subspace": datasets.Sequence(datasets.Value("float32")),
+        }
+    )
+
+    train_dataset = datasets.Dataset.from_list(train_dataset, features=features)
+    test_dataset = datasets.Dataset.from_list(test_dataset, features=features)
+
+    return train_dataset, test_dataset
+
+
+def combine_concept_reconstruction_datasets(
+    concept_train_dataset: datasets.Dataset,
+    concept_test_dataset: datasets.Dataset | None,
+    reconstruction_data_path: str,
+    split_by="concept",
+    train_ratio=0.8,
+    seed=42,
+    num_proc=None,
+    cache_dir="assets/data/axbench",
+):
+    """Combine concept dataset with reconstruction data by matching concept IDs."""
+    # Split reconstruction data
+    train_lsreft, test_lsreft = split_axbench_reconstruction_train_test(
+        reconstruction_data_path=reconstruction_data_path,
+        split_by=split_by,
+        train_ratio=train_ratio,
+        seed=seed,
+    )
+
+    if concept_test_dataset is None:
+        concept_train_dataset, concept_test_dataset = split_axbench_train_test(
+            train_set=concept_train_dataset,
+            split_by=split_by,
+            train_ratio=train_ratio,
+            seed=seed,
+        )
+
+    train_lsreft_df = pd.DataFrame(
+        {"concept_id": train_lsreft["concept_id"], "subspace": train_lsreft["subspace"]}
+    )
+    test_lsreft_df = pd.DataFrame(
+        {"concept_id": test_lsreft["concept_id"], "subspace": test_lsreft["subspace"]}
+    )
+
+    def _add_subspaces_to_dataset(concept_dataset, lsreft_df, cache_file_name=None):
+        concept_df = concept_dataset.to_pandas()
+        merged_df = pd.merge(concept_df, lsreft_df, on="concept_id", how="left")
+        result_dataset = datasets.Dataset.from_pandas(merged_df)
+        if cache_file_name:
+            result_dataset.save_to_disk(cache_file_name)
+        return result_dataset
+
+    train_dataset = _add_subspaces_to_dataset(
+        concept_train_dataset,
+        train_lsreft_df,
+        cache_file_name=f"{cache_dir}/train_with_subspaces.arrow"
+        if cache_dir
+        else None,
+    )
+    test_dataset = _add_subspaces_to_dataset(
+        concept_test_dataset,
+        test_lsreft_df,
+        cache_file_name=f"{cache_dir}/test_with_subspaces.arrow" if cache_dir else None,
+    )
 
     return train_dataset, test_dataset
 
@@ -207,9 +335,10 @@ def get_axbench_collate_fn(
     ] = "steering_train",
     intervention_layers=None,
     intervention_positions=None,
+    objective="sft",
 ):
     # TODO need to implement grabbing reft parameters for supervised training/regression objective
-    def collate_fn(batch):
+    def sft_collate_fn(batch):
         inputs, edit_instructions, targets = [], [], []
 
         for b in batch:
@@ -275,5 +404,51 @@ def get_axbench_collate_fn(
             returned_dict["intervention_positions"] = intervention_pos
 
         return returned_dict
+
+    def reconstruction_collate_fn(batch):
+        edit_instructions, reconstruction_targets = [], []
+        for b in batch:
+            if "sft" in objective:
+                edit_instructions.append(
+                    b["input_concept"]
+                    if mode in ["steering_eval", "steering_prompt"]
+                    else b["output_concept"]
+                )
+            else:
+                edit_instructions.append(b["concept"])
+            if mode == "steering_train":
+                # We only have subspace labels for training,
+                # inference is done as steering with the generated subspaces
+                reconstruction_targets.append(torch.tensor(b["subspace"]))
+
+        returned_dict = {
+            "editor_input_ids": target_tokenizer(
+                edit_instructions,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )["input_ids"],
+        }
+
+        if reconstruction_targets:
+            returned_dict["reconstruction_targets"] = torch.stack(
+                reconstruction_targets
+            )
+
+        return returned_dict
+
+    if objective == "sft":
+        collate_fn = sft_collate_fn
+    elif objective == "reconstruction":
+        collate_fn = reconstruction_collate_fn
+    elif objective == "sft+reconstruction":
+        # Merge collate function output dicts using a custom lambda
+        def merged_collate_fn(batch):
+            return {
+                **sft_collate_fn(batch),
+                **reconstruction_collate_fn(batch),
+            }
+
+        collate_fn = merged_collate_fn
 
     return collate_fn

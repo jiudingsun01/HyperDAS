@@ -8,6 +8,7 @@ from datetime import datetime
 import hydra
 import omegaconf
 import torch
+import wandb
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
@@ -15,11 +16,14 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoConfig
 
-import wandb
 from logger import get_logger
 from src.common.utils import load_wrapper, setup_tokenizer
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
-from src.hyperdas.data.axbench import split_axbench16k_train_test_fast
+from src.hyperdas.data.axbench import (
+    combine_concept_reconstruction_datasets,
+    split_axbench_reconstruction_train_test,
+    split_axbench_train_test_fast,
+)
 from src.hyperdas.llama3.model import (
     RavelInterpretor,
     SteeringInterpretor,
@@ -88,25 +92,50 @@ def run_experiment(
         config.model.target_hidden_size = hypernet_model_cfg.hidden_size
         config.model.target_model_name_or_path = config.model.name_or_path
 
-    train_set = load_wrapper(config.dataset.train_path, split="train")
+    if config.model.objective == "sft":
+        train_set = load_wrapper(config.dataset.train_path, split="train")
 
-    if not config.dataset.test_path:
-        if config.dataset.dataset_type != "axbench":
-            raise ValueError("Test path is required for dataset type")
-        logger.debug("Splitting axbench train set into train and test sets")
-        train_set, test_set = split_axbench16k_train_test_fast(
-            train_set,
+        if not config.dataset.test_path:
+            if config.dataset.dataset_type != "axbench":
+                raise ValueError("Test path is required for dataset type")
+            logger.debug("Splitting axbench train set into train and test sets")
+            train_set, test_set = split_axbench_train_test_fast(
+                train_set,
+                split_by=config.dataset.split_by,
+                train_ratio=config.dataset.train_ratio,
+            )
+        else:
+            # Load multiple test sets
+            if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
+                test_set = [
+                    load_wrapper(path, split="test")
+                    for path in config.dataset.test_path
+                ]
+            else:
+                test_set = load_wrapper(config.dataset.test_path, split="test")
+    elif config.model.objective == "sft+reconstruction":
+        assert config.dataset.dataset_type == "axbench"
+        train_set, test_set = combine_concept_reconstruction_datasets(
+            concept_train_dataset=load_wrapper(
+                config.dataset.train_path, split="train"
+            ),
+            concept_test_dataset=load_wrapper(config.dataset.test_path, split="test")
+            if config.dataset.test_path
+            else None,
+            reconstruction_data_path=config.dataset.reconstruction_path,
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
+            seed=config.dataset.seed,
+            num_proc=config.dataset.num_proc,
         )
-    else:
-        # Load multiple test sets
-        if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
-            test_set = [
-                load_wrapper(path, split="test") for path in config.dataset.test_path
-            ]
-        else:
-            test_set = load_wrapper(config.dataset.test_path, split="test")
+    elif config.model.objective == "reconstruction":
+        assert config.dataset.dataset_type == "axbench"
+        train_set, test_set = split_axbench_reconstruction_train_test(
+            reconstruction_data_path=config.dataset.reconstruction_path,
+            split_by=config.dataset.split_by,
+            train_ratio=config.dataset.train_ratio,
+            seed=config.dataset.seed,
+        )
 
     if config.dataset.dataset_type == "axbench":
         collate_fn = get_axbench_collate_fn(
@@ -115,6 +144,7 @@ def run_experiment(
             mode=config.dataset.axbench_mode,
             intervention_layers=config.model.intervention_layer,
             intervention_positions=config.model.intervention_positions,
+            objective=config.model.objective,
         )
     elif config.dataset.dataset_type == "ravel":
         collate_fn = get_ravel_collate_fn(

@@ -997,7 +997,7 @@ class QuasiProjectiveIntervention(
         # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
         # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange
         # (check this! as a sanity-check!)
-        out = InterventionModuleOutput(output=output.to(base.dtype), metrics=metrics)
+        out = InterventionModuleOutput(mixed_output=output.to(base.dtype), metrics=metrics)
         out.extra_outputs = {}
         if return_basis:
             out.extra_outputs["selected_dictionary"] = selected_dictionary.to(

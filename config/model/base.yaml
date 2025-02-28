@@ -28,3 +28,4 @@ target_hidden_size: null
 
 interpretor_type: "regular"
 use_hypernetwork: true
+weight_sharing: false

@@ -28,6 +28,7 @@ class LoReFTHypernetwork(nn.Module):
         rms_norm_eps: float = 1e-6,
         dropout: float = 0.05,
         dtype: torch.dtype = torch.bfloat16,
+        weight_sharing: bool = False,
     ) -> None:
         """
         ReFT Hypernetwork that generates weight and rotation matrices for target model intervention.
@@ -41,9 +42,11 @@ class LoReFTHypernetwork(nn.Module):
             rank: Rank of the factorized weight matrices
             rms_norm_eps: Epsilon value for layer normalization (default: 1e-6)
             dropout: Dropout probability (default: 0.05)
+            weight_sharing: Whether to share weights on position axis
         """
         super().__init__()
         self.dtype = dtype
+        self.weight_sharing = weight_sharing
         self.embed_dim = hidden_size
         self.target_embed_dim = target_hidden_size
         self.num_target_layers = num_target_layers
@@ -94,6 +97,12 @@ class LoReFTHypernetwork(nn.Module):
         """
         n_layers = layer_indices.shape[0]
         bsz, n_positions = position_indices.shape
+
+        if self.weight_sharing:
+            # We treat everything as one position
+            n_positions = 1
+            position_indices = position_indices[:, :1]
+
         # (B, L, H // 2)
         task_encoding = self.task_encoder(task_encoding[:, :, -1, :])
         # (B, P, H // 4)
@@ -140,6 +149,7 @@ class LsReFTHypernetwork(nn.Module):
         num_target_positions: int,
         rms_norm_eps: float = 1e-6,
         dtype: torch.dtype = torch.bfloat16,
+        weight_sharing: bool = False,
     ) -> None:
         """
         ReFT Hypernetwork that generates weight and rotation matrices for target model intervention.
@@ -152,9 +162,11 @@ class LsReFTHypernetwork(nn.Module):
             rank: Rank of the factorized weight matrices
             rms_norm_eps: Epsilon value for layer normalization (default: 1e-6)
             dropout: Dropout probability (default: 0.05)
+            weight_sharing: Whether to share weights on position axis
         """
         super().__init__()
         self.dtype = dtype
+        self.weight_sharing = weight_sharing
         self.embed_dim = hidden_size
         self.target_embed_dim = target_hidden_size
         self.num_target_layers = num_target_layers
@@ -193,6 +205,12 @@ class LsReFTHypernetwork(nn.Module):
         """
         n_layers = layer_indices.shape[0]
         bsz, n_positions = position_indices.shape
+
+        if self.weight_sharing:
+            # We treat everything as one position
+            n_positions = 1
+            position_indices = position_indices[:, :1]
+
         # (B, L, H // 2)
         task_encoding = self.task_encoder(task_encoding[:, :, -1, :])
         # (B, P, H // 4)
@@ -341,7 +359,7 @@ class BatchLsReftIntervention(nn.Module):
         )
 
         return InterventionModuleOutput(
-            output=intervened_output.to(base.dtype),
+            mixed_output=intervened_output.to(base.dtype),
             metrics={},
             extra_outputs={
                 "detect_latent": detect_latent,
@@ -396,7 +414,7 @@ class LoreftIntervention(
         )
 
         mixed_output = self.dropout(mixed_output.to(base.dtype))
-        return InterventionModuleOutput(output=mixed_output, metrics=metrics)
+        return InterventionModuleOutput(mixed_output=mixed_output, metrics=metrics)
 
     def state_dict(self, *args, **kwargs):
         """
@@ -486,7 +504,7 @@ class BatchLoreftIntervention(nn.Module):
         mixed_output[batch_indices, intervention_positions] = mixed_states.squeeze()
 
         return InterventionModuleOutput(
-            output=mixed_output.to(base.dtype), metrics=metrics
+            mixed_output=mixed_output.to(base.dtype), metrics=metrics
         )
 
 
@@ -547,7 +565,7 @@ class SelectiveLoreftIntervention(
             torch.transpose(reflected_weight, 1, 2),
         )
         return InterventionModuleOutput(
-            output=self.dropout(output.to(base.dtype)), metrics=metrics
+            mixed_output=self.dropout(output.to(base.dtype)), metrics=metrics
         )
 
     def state_dict(self, *args, **kwargs):
@@ -610,7 +628,7 @@ class SteeringVecLoreftIntervention(
         metrics = {}
         output = hidden_states[:, -1, :].unsqueeze(1).repeat(1, base.shape[1], 1)
         return InterventionModuleOutput(
-            output=self.dropout(output.to(base.dtype)), metrics=metrics
+            mixed_output=self.dropout(output.to(base.dtype)), metrics=metrics
         )
 
     def state_dict(self, *args, **kwargs):

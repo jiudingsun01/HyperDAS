@@ -4,3 +4,4 @@ base_suffix_visibility: false
 dataset_type: ravel # or axbench
 mode: localization # or steering
 train_ratio: 0.8
+seed: 42

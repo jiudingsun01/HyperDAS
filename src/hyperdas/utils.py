@@ -144,7 +144,7 @@ class InterpretorModelOutputWithLearnedSource(InterpretorModelOutput):
 
 @dataclass
 class InterventionModuleOutput(ModelOutput):
-    output: torch.Tensor = None
+    mixed_output: torch.Tensor = None
     metrics: Dict[str, Any] = None
     extra_outputs: Dict[str, torch.Tensor] = None
 
