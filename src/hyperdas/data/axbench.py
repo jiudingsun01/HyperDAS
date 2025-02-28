@@ -5,6 +5,7 @@ from typing import Literal
 import datasets
 import numpy as np
 import pandas as pd
+from sympy import to_cnf
 import torch
 
 from axbench.scripts.evaluate import load_jsonl
@@ -216,8 +217,24 @@ def combine_concept_reconstruction_datasets(
 
     def _add_subspaces_to_dataset(concept_dataset, lsreft_df, cache_file_name=None):
         concept_df = concept_dataset.to_pandas()
-        merged_df = pd.merge(concept_df, lsreft_df, on="concept_id", how="left")
-        result_dataset = datasets.Dataset.from_pandas(merged_df)
+        concept_df = concept_df[concept_df["concept_id"] != -1]
+        # Create a dictionary mapping concept_id to subspace for quick lookup
+        subspace_dict = dict(zip(lsreft_df["concept_id"], lsreft_df["subspace"]))
+        # Filter concept_df to only include examples with concept_ids that have subspaces
+        original_count = len(concept_df)
+        concept_df = concept_df[
+            concept_df["concept_id"].apply(lambda x: str(x) in subspace_dict)
+        ]
+        filtered_count = original_count - len(concept_df)
+        if filtered_count > 0:
+            print(
+                f"Filtered out {filtered_count} examples without matching subspaces in reconstruction data"
+            )
+        # Add subspace column directly without merge
+        concept_df["subspace"] = concept_df["concept_id"].apply(
+            lambda x: subspace_dict[str(x)]
+        )
+        result_dataset = datasets.Dataset.from_pandas(concept_df)
         if cache_file_name:
             result_dataset.save_to_disk(cache_file_name)
         return result_dataset

@@ -126,7 +126,6 @@ def run_experiment(
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
             seed=config.dataset.seed,
-            num_proc=config.dataset.num_proc,
         )
     elif config.model.objective == "reconstruction":
         assert config.dataset.dataset_type == "axbench"

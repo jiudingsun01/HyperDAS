@@ -1176,6 +1176,8 @@ class SteeringInterpretor(BaseInterpretor):
         for key, value in loss_accumulators.items():
             metrics[key] = value / num_batches
 
+        return metrics
+
     def run_train(
         self,
         train_loader,
