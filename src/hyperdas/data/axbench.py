@@ -377,6 +377,7 @@ def get_axbench_collate_fn(
             "is_causal": is_causal,
         }
 
+        # TODO(sid): for edit instruction, do we need bos token?
         if hypernet_tokenizer:
             editor_input_ids = hypernet_tokenizer(
                 edit_instructions, return_tensors="pt", padding=True, truncation=True

@@ -10,6 +10,7 @@ intervention_positions: "f7+l7"
 
 use_hypernetwork: false
 interpretor_type: "steering"
+concept_detection: true
 reft_hypernetwork: "LsReFT"
 top_k: 8
 reconstruction_loss_weight: 1.0

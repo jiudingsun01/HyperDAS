@@ -133,6 +133,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     sft_loss_weight: float = 1.0
     intervention_layer_list: List[int] = None
     weight_sharing: bool = False
+    concept_detection: bool = False
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -504,25 +505,6 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         )
 
         return hidden_states, source_attn_weight, base_attn_weight
-
-
-class SimpleMLPHypernetwork(nn.Module):
-    def __init__(self, config: LlamaInterpretorConfig):
-        super().__init__()
-        self.config = config
-        self.mlp = nn.Sequential(
-            nn.Linear(
-                config.target_hidden_size,
-                config.intermediate_size,
-                dtype=config.torch_dtype,
-            ),
-            nn.LayerNorm(config.intermediate_size, eps=1e-5),
-            nn.SiLU(),
-            nn.Dropout(config.dropout),
-        )
-
-    def forward(self, inputs_embeds: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
-        return self.mlp(inputs_embeds)
 
 
 class LlamaInterpretorForSteering(nn.Module):

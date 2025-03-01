@@ -183,6 +183,7 @@ def run_experiment(
                     num_workers=num_workers,
                     pin_memory=True,
                 ),
+                raw=test_set_,
                 name=os.path.basename(
                     config.dataset.test_path[i]
                     or config.dataset.train_path + f"_test{i}"
@@ -201,6 +202,7 @@ def run_experiment(
                     num_workers=num_workers,
                     pin_memory=True,
                 ),
+                raw=test_set,
                 name=os.path.basename(
                     config.dataset.test_path or config.dataset.train_path
                 ),

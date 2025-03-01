@@ -6,11 +6,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from numpy import isin
 import torch
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 
-NamedDataLoader = namedtuple("NamedDataLoader", ["name", "data_loader"])
+NamedDataLoader = namedtuple("NamedDataLoader", ["name", "raw", "data_loader"])
 
 
 class SimpleTensorCache:
@@ -160,6 +161,8 @@ def add_fwd_hooks(module_hooks):
         A list of pairs: (module, fnc) The function will be registered as a
             forward hook on the module
     """
+    if isinstance(module_hooks, tuple):
+        module_hooks = [module_hooks]
     try:
         handles = []
         for mod, hk in module_hooks:

@@ -2,27 +2,35 @@ import json
 import os
 from abc import ABC, abstractmethod
 from math import ceil
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import ModelOutput
 
-import wandb
+from axbench.models.sae import load_metadata_flatten
 from logger import get_logger
-from src.hyperdas.data.axbench import parse_positions_varlen
+from src.hyperdas.data.axbench import get_axbench_collate_fn, parse_positions_varlen
 
-from ..utils import InterpretorModelOutput, NamedDataLoader, init_on_device
+from ..utils import (
+    InterpretorModelOutput,
+    NamedDataLoader,
+    add_fwd_hooks,
+    init_on_device,
+)
 from .modules import (
-    LlamaInterpretorWithBaseSource,
     LlamaInterpretorConfig,
     LlamaInterpretorForSteering,
+    LlamaInterpretorWithBaseSource,
     LlamaInterpretorWithLearnedSource,
 )
 
@@ -938,6 +946,7 @@ class SteeringInterpretor(BaseInterpretor):
         self.interpretor_config.sft_loss_weight = config.model.sft_loss_weight
         self.interpretor_config.objective = config.model.objective
         self.interpretor_config.weight_sharing = config.model.weight_sharing
+        self.interpretor_config.concept_detection = config.model.concept_detection
 
         # Initialize model components
         interpretor_cls = INTERPRETOR_CLS[config.model.interpretor_type]
@@ -1176,6 +1185,78 @@ class SteeringInterpretor(BaseInterpretor):
         for key, value in loss_accumulators.items():
             metrics[key] = value / num_batches
 
+        dataset_df = pd.DataFrame(test_dataloader.raw)
+        concept_dfs = dataset_df[dataset_df["concept_id"] != -1].groupby("concept_id")
+
+        for concept_id, concept_df in concept_dfs:
+            # Load concept detection dataset
+            if (
+                self.config.model.concept_detection
+                and self.config.model.reft_hypernetwork == "LsReFT"
+            ):
+                batch_size = self.config.training.test_batch_size
+                # Process in batches
+                for i in tqdm(
+                    range(0, len(concept_df), batch_size),
+                    desc="eval steps",
+                ):
+                    batch = concept_df.raw[i : i + batch_size]
+                    # compute batch from raw batch
+                    input_batch = get_axbench_collate_fn(
+                        self.target_model_tokenizer,
+                        mode="concept",
+                        intervention_layers=self.config.model.intervention_layers,
+                        intervention_positions=self.config.model.intervention_positions,
+                    )(batch)
+                    # Move batch to GPU
+                    input_batch = {k: v.to(self.device) for k, v in input_batch.items()}
+
+                    # Create activation gathering hook
+                    gather_acts = None
+
+                    def act_gather_layer_hook(module, input, output):
+                        nonlocal gather_acts
+                        gather_acts = output[0]
+                        return output
+
+                    hooks = (
+                        self.interpretor.target_model.model.layers[
+                            self.config.model.intervention_layers[0] - 1
+                        ],
+                        act_gather_layer_hook,
+                    )
+
+                    with add_fwd_hooks(hooks):
+                        outputs = self.forward(
+                            editor_input_ids=batch.get("editor_input_ids", None),
+                            base_input_ids=batch.get("base_input_ids", None),
+                            base_attention_mask=batch.get("base_attention_mask", None),
+                            base_intervention_mask=batch.get(
+                                "base_intervention_mask", None
+                            ),
+                            target_input_ids=batch.get("target_input_ids", None),
+                            target_attention_mask=batch.get(
+                                "target_attention_mask", None
+                            ),
+                            target_position_ids=batch.get("target_position_ids", None),
+                            target_weights=batch.get("reconstruction_targets", None),
+                            intervention_layers=batch.get("intervention_layers", None),
+                            intervention_positions=batch.get(
+                                "intervention_positions", None
+                            ),
+                            labels=batch.get("labels", None),
+                            is_causal=batch.get("is_causal", None),
+                        )
+
+                    seq_lens = (
+                        input_batch["editor_input_ids"]
+                        != self.target_model_tokenizer.eos_token_id
+                    ).sum(-1)
+                    for seq_idx, seq_len in enumerate(seq_lens):
+                        pass
+
+                # TODO add to metrics here
+
         return metrics
 
     def run_train(
@@ -1200,15 +1281,7 @@ class SteeringInterpretor(BaseInterpretor):
         trainable_parameters = []
         for name, param in self.named_parameters():
             if "target_model" not in name:
-                if "das_module" in name:
-                    if "rotate_layer" in name:
-                        trainable_parameters += [
-                            {"params": param, "lr": self.rotate_lr, "weight_decay": 0.0}
-                        ]
-                    else:
-                        trainable_parameters += [{"params": param}]
-                else:
-                    trainable_parameters += [{"params": param}]
+                trainable_parameters += [{"params": param}]
 
         self.opt = optim.AdamW(
             trainable_parameters, lr=lr, weight_decay=weight_decay
