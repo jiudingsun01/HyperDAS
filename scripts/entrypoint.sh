@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e  # Exit on error
 
+# Create NVIDIA device symlinks if nvidia-ctk is available
+if command -v nvidia-ctk &> /dev/null; then
+    echo "🔧 Creating NVIDIA device symlinks..."
+    nvidia-ctk system create-dev-char-symlinks --create-all || true
+fi
+
 # Change to project directory if PROJECT_NAME is set
 if [ ! -z "${PROJECT_NAME}" ]; then
     cd /workspace/${PROJECT_NAME}
@@ -20,6 +26,17 @@ if [[ "$(uname -s)" == "Linux" ]]; then
         echo "🎯 CUDA_VISIBLE_DEVICES set to: ${CUDA_VISIBLE_DEVICES}"
     else
         echo "⚠️  WARNING: CUDA is not available"
+        # Check for common issues
+        echo "Checking for common GPU access issues..."
+        if [ ! -e /dev/nvidia0 ]; then
+            echo "❌ /dev/nvidia0 device not found"
+        fi
+        if [ ! -e /dev/nvidiactl ]; then
+            echo "❌ /dev/nvidiactl device not found"
+        fi
+        if [ ! -e /dev/nvidia-uvm ]; then
+            echo "❌ /dev/nvidia-uvm device not found"
+        fi
     fi
 else
     echo "🍎 Running on macOS"

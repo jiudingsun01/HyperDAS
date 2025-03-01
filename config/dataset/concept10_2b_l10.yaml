@@ -1,9 +1,0 @@
-defaults:
-  - base
-  - _self_ # Ensure dataset-specific configs override base
-
-train_path: "experiments/axbench/data/concept10_2b_l10"
-test_path: "experiments/axbench/data/concept10_2b_l10"
-dataset_type: axbench
-axbench_mode: steering_train
-split_by: concept

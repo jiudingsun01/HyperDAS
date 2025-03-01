@@ -122,7 +122,7 @@ def run_experiment(
             concept_test_dataset=load_wrapper(config.dataset.test_path, split="test")
             if config.dataset.test_path
             else None,
-            reconstruction_data_path=config.dataset.reconstruction_path,
+            reconstruction_data_path=config.dataset.reconstruction_train_path,
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
             seed=config.dataset.seed,
@@ -130,7 +130,7 @@ def run_experiment(
     elif config.model.objective == "reconstruction":
         assert config.dataset.dataset_type == "axbench"
         train_set, test_set = split_axbench_reconstruction_train_test(
-            reconstruction_data_path=config.dataset.reconstruction_path,
+            reconstruction_data_path=config.dataset.reconstruction_train_path,
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
             seed=config.dataset.seed,

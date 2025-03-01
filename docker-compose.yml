@@ -19,8 +19,15 @@ services:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
       - ./.vscode-server:/.vscode-server
       - ${HOME}/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+      # Add explicit device mounts for better GPU stability
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidiactl:/dev/nvidiactl
     
-    network_mode: host
+    ports:
+      - "${HOST_RAY_DASHBOARD_PORT:-8265}:8265"
+      - "${HOST_RAY_CLIENT_PORT:-10001}:10001"
     command: >                                                                                                                     
       bash -c "                                                                                                                    
       ray start --head                                                                                                             

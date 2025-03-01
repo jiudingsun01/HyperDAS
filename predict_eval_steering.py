@@ -14,6 +14,7 @@ import hydra
 import pandas as pd
 import torch
 import torch.distributed as dist
+import wandb
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
@@ -21,7 +22,6 @@ from omegaconf import DictConfig, OmegaConf
 from openai import AsyncOpenAI
 from tqdm import tqdm
 
-import wandb
 from axbench.models.sae import load_metadata_flatten
 from axbench.scripts.evaluate import eval_steering
 from axbench.scripts.inference import (
@@ -87,6 +87,7 @@ def predict_steering(
     concept_df: pd.DataFrame,
     device: str,
     mode: InferenceModes,
+    reconstruction_data=None,
     batch_size: int = 16,
     eval_output_length: int = 100,
     temperature: float = 0.7,
@@ -104,6 +105,7 @@ def predict_steering(
         test_dataloader: DataLoader containing test data
         device: Device to run inference on
         mode: an InferenceModes enum value
+        reconstruction_data: reconstruction data
         max_eval_steps: Maximum number of eval steps (-1 for no limit)
         max_new_tokens: Maximum number of tokens to generate
         temperature: Sampling temperature

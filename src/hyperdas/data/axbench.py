@@ -5,7 +5,6 @@ from typing import Literal
 import datasets
 import numpy as np
 import pandas as pd
-from sympy import to_cnf
 import torch
 
 from axbench.scripts.evaluate import load_jsonl
