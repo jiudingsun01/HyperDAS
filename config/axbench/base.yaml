@@ -1,4 +1,5 @@
 mode: inference # or eval, all
+type: steering # or latent, all
 
 generate:
   lm_model: "gpt-4o-mini"

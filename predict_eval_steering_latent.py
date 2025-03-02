@@ -1,9 +1,11 @@
-"""Main entrypoint script to train HyperDAS models and derivatives."""
+"""Main entrypoint script to evaluate experimental steering methods based on HyperDAS architectures/codebase."""
 
+import atexit
 import gc
 import hashlib
 import json
 import os
+import pickle
 import random
 from enum import Enum
 from pathlib import Path
@@ -26,14 +28,16 @@ from axbench.models.sae import load_metadata_flatten
 from axbench.scripts.evaluate import eval_steering
 from axbench.scripts.inference import (
     METADATA_FILE,
+    create_data_latent,
     create_data_steering,
     load_state,
     partition_concept_ids,
+    prepare_df,
     save,
     save_state,
 )
 from axbench.utils.constants import CHAT_MODELS
-from axbench.utils.dataset import SteeringDatasetFactory
+from axbench.utils.dataset import DatasetFactory, SteeringDatasetFactory
 from axbench.utils.model_utils import get_prefix_length
 from logger import get_logger
 from src.common.utils import setup_tokenizer
@@ -195,6 +199,11 @@ def predict_steering(
     }
 
 
+@torch.no_grad()
+def predict_latent():
+    pass
+
+
 def infer_steering(config, rank, world_size, device, logger):
     logger.info(f"Starting inference for rank {rank} out of {world_size}")
 
@@ -269,6 +278,9 @@ def infer_steering(config, rank, world_size, device, logger):
         lm_model=config.axbench.inference.lm_model,
         has_prompt_steering=has_prompt_steering,
     )
+    atexit.register(dataset_factory.save_cache)
+    atexit.register(dataset_factory.reset_stats)
+
     is_chat_model = (
         True if config.axbench.inference.model_name in CHAT_MODELS else False
     )
@@ -449,6 +461,378 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
         device,
         get_logger("inference"),
     )
+
+
+def infer_latent(
+    config: DictConfig, rank, world_size, device, logger, training_args, generate_args
+):
+    data_dir = Path(config.axbench.inference.data_dir)
+    dump_dir = Path(config.training.load_trained_from)
+    num_of_examples = config.axbench.inference.steering_num_of_examples
+    metadata = load_metadata_flatten(data_dir / METADATA_FILE)
+
+    state = load_state(dump_dir, "latent", rank)
+    last_concept_id_processed = state.get("last_concept_id", None) if state else None
+    logger.warning(
+        f"Rank {rank} last concept_id processed: {last_concept_id_processed}"
+    )
+
+    # Get list of all concept_ids
+    concept_ids = [metadata[i]["concept_id"] for i in range(len(metadata))]
+
+    # Partition concept_ids among ranks sequentially
+    concept_ids_per_rank = partition_concept_ids(concept_ids, world_size)
+    my_concept_ids = concept_ids_per_rank[rank]
+
+    if last_concept_id_processed is not None:
+        if last_concept_id_processed in my_concept_ids:
+            idx = my_concept_ids.index(last_concept_id_processed)
+            my_concept_ids = my_concept_ids[idx + 1 :]
+        else:
+            # If last_concept_id_processed is not in my_concept_ids, process all
+            pass
+
+    if len(my_concept_ids) == 0:
+        logger.warning(f"Rank {rank} has no concepts to process. Exiting.")
+        return
+
+    # Create a new OpenAI client.
+    client = AsyncOpenAI(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        timeout=60.0,
+        http_client=httpx.AsyncClient(
+            limits=httpx.Limits(max_keepalive_connections=100, max_connections=1000),
+            headers={"Connection": "close"},
+        ),
+        max_retries=3,
+    )
+
+    # Initialize the dataset factory with the tokenizer.
+    logger.debug("Setting up tokenizers")
+    tokenizer = setup_tokenizer(
+        config.model.target_model_name_or_path, max_length=config.model.max_length
+    )
+    # Hypernet tokenizer
+    hypernet_tokenizer = setup_tokenizer(
+        model_name_or_path=config.model.name_or_path, max_length=config.model.max_length
+    )
+
+    is_chat_model = (
+        True if config.axbench.inference.model_name in CHAT_MODELS else False
+    )
+    prefix_length = 1  # prefix is default to 1 for all models due to the BOS token.
+    if is_chat_model:
+        prefix_length = get_prefix_length(tokenizer)
+        logger.warning(f"Chat model prefix length: {prefix_length}")
+
+    # Load dataset factory for evals.
+    dataset_factory = DatasetFactory(
+        None,
+        client,
+        tokenizer,
+        generate_args.dataset_category,
+        None,
+        None,
+        dump_dir,
+        use_cache=False,
+        master_data_dir=config.axbench.inference.master_data_dir,
+        lm_model=config.axbench.inference.lm_model,
+        logger=logger,
+        is_inference=True,
+        overwrite_inference_data_dir=training_args.overwrite_inference_data_dir,
+    )
+    atexit.register(dataset_factory.save_cache)
+    atexit.register(dataset_factory.reset_stats)
+
+    # Now loop over concept_ids and use preloaded models
+    cache_df = {}
+    for concept_id in my_concept_ids:
+        dataset_category = generate_args.dataset_category
+        if (concept_id, dataset_category) not in cache_df:
+            current_df = create_data_latent(
+                dataset_factory,
+                metadata,
+                concept_id,
+                num_of_examples,
+                config.axbench.inference,
+            )
+            logger.warning(
+                f"Inference latent with {config.axbench.inference.model_name} on {device} for concept {concept_id}."
+            )
+            current_df = prepare_df(
+                current_df,
+                tokenizer,
+                is_chat_model,
+                config.axbench.inference.model_name,
+            )
+            cache_df[(concept_id, dataset_category)] = current_df
+        else:
+            current_df = cache_df[(concept_id, dataset_category)]
+
+        # TODO(sid): call our own predict_latent function
+        results = predict_latent(
+            current_df,
+            batch_size=config.axbench.inference.latent_batch_size,
+            prefix_length=prefix_length,
+        )
+
+        # Store the results in current_df
+        for k, v in results.items():
+            if k == "tokens":
+                if "tokens" not in current_df:
+                    current_df["tokens"] = v  # for tokens, they are global
+                else:
+                    continue
+            else:
+                current_df[f"{config.axbench.inference.model_name}_{k}"] = v
+
+        save(dump_dir, "latent", current_df, rank)
+        logger.warning(
+            f"Saved inference results for concept {concept_id} to rank_{rank}_latent_data.parquet"
+        )
+        # After processing, save state
+        current_state = {"last_concept_id": concept_id}
+        save_state(dump_dir, current_state, "latent", rank)
+
+    # Synchronize all processes
+    dist.barrier()
+
+    # Rank 0 merges results
+    if rank == 0:
+        logger.warning("Rank 0 is merging results.")
+        # Merge per-rank results
+        all_parquet_files = list(
+            (Path(dump_dir) / "inference").glob("rank_*_latent_data.parquet")
+        )
+        # Parse filenames to extract rank
+        import re
+
+        pattern = re.compile(r"rank_(\d+)_latent_data\.parquet")
+
+        file_info_list = []
+        for parquet_file in all_parquet_files:
+            match = pattern.match(parquet_file.name)
+            if match:
+                rank_str = match.group(1)
+                rank_int = int(rank_str)
+                file_info_list.append({"rank": rank_int, "file": parquet_file})
+            else:
+                logger.warning(
+                    f"Filename {parquet_file.name} does not match the expected pattern."
+                )
+
+        # Sort the file_info_list by rank
+        file_info_list.sort(key=lambda x: x["rank"])
+
+        # Read and concatenate dataframes
+        dfs = []
+        for info in file_info_list:
+            df = pd.read_parquet(info["file"])
+            dfs.append(df)
+        if len(dfs) > 0:
+            combined_df = pd.concat(dfs, ignore_index=True)
+            combined_df.to_parquet(
+                Path(dump_dir) / "inference" / "latent_data.parquet", engine="pyarrow"
+            )
+            logger.warning(
+                f"Saved combined latent inference results to {Path(dump_dir) / 'inference' / 'latent_data.parquet'}"
+            )
+        else:
+            logger.warning("No results to merge.")
+
+        # Optionally, delete per-rank files
+        for info in file_info_list:
+            os.remove(info["file"])
+            logger.warning(f"Deleted {info['file']}")
+
+        # Save top logits (optional)
+        logger.warning("Saving top logits...")
+
+        # TODO(sid): refactor to use our impl
+        if "LsReFT" in args.models:
+            model_name = "LsReFT"
+            model_class = getattr(axbench, model_name)
+            benchmark_model = model_class(
+                model_instance,
+                tokenizer,
+                layer=layer,
+                low_rank_dimension=len(metadata),
+                device=device,
+            )
+            benchmark_model.load(dump_dir=train_dir, sae_path=metadata[0]["ref"])
+            if hasattr(benchmark_model, "ax") and args.use_bf16:
+                benchmark_model.ax.eval()
+                benchmark_model.ax.to(torch.bfloat16)
+            benchmark_model.to(device)
+            for concept_id in concept_ids:
+                top_logits, neg_logits = benchmark_model.get_logits(concept_id, k=10)
+                top_logits_entry = {
+                    "concept_id": int(concept_id),
+                    "results": {
+                        model_name: {"top_logits": top_logits, "neg_logits": neg_logits}
+                    },
+                }
+                with open(Path(dump_dir) / "inference" / "top_logits.jsonl", "a") as f:
+                    f.write(json.dumps(top_logits_entry) + "\n")
+
+
+def infer_latent_imbalance(
+    args, rank, world_size, device, logger, training_args, generate_args
+):
+    data_dir = args.data_dir
+    train_dir = args.train_dir
+    dump_dir = args.dump_dir
+    num_of_examples = args.latent_num_of_examples
+    config = load_config(train_dir)
+    metadata = load_metadata_flatten(data_dir)
+    layer = config["layer"] if config else 0  # default layer for prompt baselines
+
+    # Get list of all concept_ids
+    concept_ids = [metadata[i]["concept_id"] for i in range(len(metadata))]
+
+    # Create a new OpenAI client.
+    client = AsyncOpenAI(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        timeout=60.0,
+        http_client=httpx.AsyncClient(
+            limits=httpx.Limits(max_keepalive_connections=100, max_connections=1000),
+            headers={"Connection": "close"},
+        ),
+        max_retries=3,
+    )
+
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, model_max_length=1024)
+    tokenizer.padding_side = "right"
+
+    # Load model instance onto device
+    if args.use_bf16:
+        logger.warning(f"Using bfloat16 for model {args.model_name}")
+    model_instance = AutoModelForCausalLM.from_pretrained(
+        args.model_name,
+        torch_dtype=torch.bfloat16 if args.use_bf16 else None,
+        device_map="auto",
+    )
+    is_chat_model = True if args.model_name in CHAT_MODELS else False
+    model_instance = model_instance.eval()
+
+    if tokenizer.unk_token == None and tokenizer.pad_token == None:
+        # raw llama3
+        print("adding a special padding token...")
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        need_resize = True
+    else:
+        need_resize = False
+    if need_resize:
+        model_instance.resize_token_embeddings(len(tokenizer))
+
+    prefix_length = 1  # prefix is default to 1 for all models due to the BOS token.
+    if is_chat_model:
+        prefix_length = get_prefix_length(tokenizer)
+        logger.warning(f"Chat model prefix length: {prefix_length}")
+
+    # Load dataset factory for evals.
+    dataset_factory = DatasetFactory(
+        None,
+        client,
+        tokenizer,
+        generate_args.dataset_category,
+        None,
+        None,
+        dump_dir,
+        use_cache=False,
+        master_data_dir=args.master_data_dir,
+        lm_model=args.lm_model,
+        logger=logger,
+        is_inference=True,
+        overwrite_inference_data_dir=training_args.overwrite_inference_data_dir,
+    )
+    atexit.register(dataset_factory.save_cache)
+    atexit.register(dataset_factory.reset_stats)
+
+    has_latent_model = False
+    for model_name in args.models:
+        # load model on the fly to save memory
+        if model_name not in LATENT_EXCLUDE_MODELS:
+            has_latent_model = True
+            break
+
+    if not has_latent_model:
+        logger.warning("No latent model to infer. Exiting.")
+        return
+
+    logger.warning(
+        f"We are inferencing imbalanced latent once for all concepts with factor {args.imbalance_factor}."
+    )
+    all_negative_df = dataset_factory.create_imbalance_eval_df(
+        num_of_examples, factor=args.imbalance_factor
+    )
+    all_negative_df = prepare_df(
+        all_negative_df, tokenizer, is_chat_model, args.model_name
+    )
+
+    # save all_negative_df to disk
+    dump_dir = Path(dump_dir) / "inference_imbalance"
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    all_negative_df.to_parquet(
+        Path(dump_dir) / "all_negative_df.parquet", engine="pyarrow"
+    )
+
+    for model_name in args.models:
+        # load model on the fly to save memory
+        if model_name in LATENT_EXCLUDE_MODELS:
+            continue
+        model_class = getattr(axbench, model_name)
+        logger.warning(f"Loading {model_class} on {device}.")
+        benchmark_model = model_class(
+            model_instance,
+            tokenizer,
+            layer=layer,
+            low_rank_dimension=len(metadata),
+            device=device,
+        )
+        if model_name in {"PromptDetection", "BoW"}:
+            for concept_id in concept_ids:
+                benchmark_model.load(
+                    dump_dir=train_dir,
+                    sae_path=metadata[0]["ref"],
+                    mode="latent",
+                    concept_id=concept_id,
+                )
+                benchmark_model.to(device)
+                if hasattr(benchmark_model, "ax") and args.use_bf16:
+                    benchmark_model.ax.eval()
+                    benchmark_model.ax.to(torch.bfloat16)
+                results = benchmark_model.predict_latent(
+                    all_negative_df,
+                    batch_size=args.latent_batch_size,
+                    prefix_length=prefix_length,
+                    concept=metadata[concept_id]["concept"],
+                )
+                # save results to disk
+                with open(
+                    dump_dir / f"{model_name}_concept_{concept_id}_latent_results.pkl",
+                    "wb",
+                ) as f:
+                    pickle.dump(results, f)
+        else:
+            benchmark_model.load(
+                dump_dir=train_dir, sae_path=metadata[0]["ref"], mode="latent"
+            )
+            benchmark_model.to(device)
+            if hasattr(benchmark_model, "ax") and args.use_bf16:
+                benchmark_model.ax.eval()
+                benchmark_model.ax.to(torch.bfloat16)
+            # we only save the max act for each concept to save disk space, otherwise each file will be ~3GB.
+            # if you wish to save the raw acts, you can go into predict_latents and modify the output.
+            results = benchmark_model.predict_latents(
+                all_negative_df,
+                batch_size=args.latent_batch_size,
+                prefix_length=prefix_length,
+            )
+            # save results to disk
+            with open(dump_dir / f"{model_name}_latent_results.pkl", "wb") as f:
+                pickle.dump(results, f)
 
 
 def find_run_by_name(run_name, entity, project):
