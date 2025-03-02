@@ -23,7 +23,7 @@ training:
   weight_decay: 0.01
   n_epochs: 5
   n_steps: -1
-  eval_per_steps: 500
+  test_per_steps: 500
   save_model: false
   debug_model: false
 

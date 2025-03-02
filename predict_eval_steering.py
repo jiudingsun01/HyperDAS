@@ -106,7 +106,7 @@ def predict_steering(
         device: Device to run inference on
         mode: an InferenceModes enum value
         reconstruction_data: reconstruction data
-        max_eval_steps: Maximum number of eval steps (-1 for no limit)
+        max_test_steps: Maximum number of eval steps (-1 for no limit)
         max_new_tokens: Maximum number of tokens to generate
         temperature: Sampling temperature
         do_sample: Whether to use sampling for generation
@@ -125,9 +125,7 @@ def predict_steering(
         batch = get_axbench_collate_fn(
             hypernet_tokenizer,
             target_model_tokenizer,
-            mode="steering_eval"
-            if mode == InferenceModes.HYPERREFT
-            else "steering_prompt",
+            modes="eval" if mode == InferenceModes.HYPERREFT else "prompt",
             intervention_layers=intervention_layers,
             intervention_positions=intervention_positions,
         )(converted_batch)

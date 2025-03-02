@@ -38,7 +38,7 @@ if __name__ == "__main__":
             n_epochs=3,
             lr=4e-5,
             weight_decay=0.01,
-            eval_per_steps=None,
+            test_per_steps=None,
             checkpoint_per_steps=None,
             test_path="./experiments/RAVEL/data/city_test",
             train_path="./experiments/RAVEL/data/city_train",

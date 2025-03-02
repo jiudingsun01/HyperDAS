@@ -10,7 +10,7 @@ defaults:
 training:
   lr: 3e-5
   n_epochs: 5
-  eval_per_steps: 100
+  test_per_steps: 100
   save_model: true
   debug_model: true
   train_batch_size: 4
@@ -21,6 +21,10 @@ model:
   max_length: 256
   das_dimension: 1
   objective: reconstruction
+  concept_detection: false
+
+dataset:
+  eval_path: null
 
 loss:
   return_penalty: false

@@ -23,7 +23,7 @@ def run_experiment(
     n_epochs=1,
     das_dimension=None,
     lr=3e-5,
-    eval_per_steps=100,
+    test_per_steps=100,
     checkpoint_per_steps=500,
     test_path=None,
     train_path=None,
@@ -82,7 +82,7 @@ def run_experiment(
         test_loader=test_data_loader,
         epochs=n_epochs,
         checkpoint_per_steps=checkpoint_per_steps,
-        eval_per_steps=eval_per_steps,
+        test_per_steps=test_per_steps,
         save_dir=save_dir,
         causal_loss_weight=causal_loss_weight,
         lr=lr,
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     # if None, use Boundless DAS
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--eval_per_steps", type=int, default=100)
+    parser.add_argument("--test_per_steps", type=int, default=100)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
 
     args = parser.parse_args()

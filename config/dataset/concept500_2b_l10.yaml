@@ -5,7 +5,9 @@ defaults:
 train_path: "experiments/axbench/data/concept500_2b_l10"
 test_path: "experiments/axbench/data/concept10_2b_l10"
 reconstruction_train_path: "assets/data/axbench/prod_2b_l10_concept500_lsreft/train"
-reconstruction_test_path: "assets/data/axbench/prod_2b_l10_concept10_lsreft/test"
+reconstruction_test_path: "assets/data/axbench/prod_2b_l10_concept10_lsreft/train"
+# eval_path: "experiments/axbench/data/concept10_2b_l10"
+eval_path: "experiments/axbench/data/concept500_2b_l10"
 dataset_type: axbench
-axbench_mode: steering_train
+axbench_mode: train_steering
 split_by: concept

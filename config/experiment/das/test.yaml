@@ -17,7 +17,7 @@ model:
 training:
   n_epochs: 1
   n_steps: 500
-  eval_per_steps: 100
+  test_per_steps: 100
   save_model: true
   debug_model: true
 

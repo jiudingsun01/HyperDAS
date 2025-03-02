@@ -2,11 +2,12 @@ import json
 import os
 from abc import ABC, abstractmethod
 from math import ceil
-from pathlib import Path
 from typing import Dict, List, Optional
 
+import datasets
 import matplotlib.pyplot as plt
 import pandas as pd
+import einops
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -17,14 +18,13 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import ModelOutput
 
-from axbench.models.sae import load_metadata_flatten
+from axbench.evaluators.latent_stats import LatentStatsEvaluator
 from logger import get_logger
 from src.hyperdas.data.axbench import get_axbench_collate_fn, parse_positions_varlen
 
 from ..utils import (
     InterpretorModelOutput,
     NamedDataLoader,
-    add_fwd_hooks,
     init_on_device,
 )
 from .modules import (
@@ -89,7 +89,7 @@ class BaseInterpretor(nn.Module, ABC):
 
         self.residual_cache = None
         self.opt = None
-        self.max_eval_steps = config.training.max_eval_steps
+        self.max_test_steps = config.training.max_test_steps
 
         # Dummy initialization for typing
         self.interpretor: LlamaInterpretorWithBaseSource = None
@@ -124,7 +124,7 @@ class BaseInterpretor(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def run_train(self, train_loader, test_loader=None):
+    def run_train(self, train_loader, test_loader=None, **kwargs):
         pass
 
 
@@ -540,8 +540,8 @@ class RavelInterpretor(BaseInterpretor):
             for batch_id, batch in tqdm(
                 enumerate(test_loader.data_loader),
                 desc="Evaluating accuracy",
-                total=self.max_eval_steps
-                if self.max_eval_steps > 0
+                total=self.max_test_steps
+                if self.max_test_steps > 0
                 else len(test_loader.data_loader),
             ):
                 # Move entire batch to GPU once
@@ -585,7 +585,7 @@ class RavelInterpretor(BaseInterpretor):
                     if is_correct:
                         correct_idxs.append(batch_id * len(batch["labels"]) + i)
 
-                if self.max_eval_steps > 0 and batch_id + 1 > self.max_eval_steps:
+                if self.max_test_steps > 0 and batch_id + 1 > self.max_test_steps:
                     break
 
             total_causal = sum(is_causal)
@@ -623,11 +623,12 @@ class RavelInterpretor(BaseInterpretor):
         self,
         train_loader,
         test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
+        **kwargs,
     ):
         inference_modes = self.config.model.inference_modes
         epochs = self.config.training.n_epochs
         steps = self.config.training.n_steps
-        eval_per_steps = self.config.training.eval_per_steps
+        test_per_steps = self.config.training.test_per_steps
         checkpoint_per_steps = self.config.training.checkpoint_per_steps
         save_dir = self.config.training.save_dir
         save_model = self.config.training.save_model
@@ -702,8 +703,8 @@ class RavelInterpretor(BaseInterpretor):
                     if cur_steps >= total_steps:
                         logger.info("Training stopped. Reached max steps.")
                         break
-                    if eval_per_steps is not None:
-                        if cur_steps % eval_per_steps == 0:
+                    if test_per_steps is not None:
+                        if cur_steps % test_per_steps == 0:
                             # Evaluate the model
                             for mode in inference_modes:
                                 accuracies, test_loss, _ = self.predict(
@@ -1011,6 +1012,8 @@ class SteeringInterpretor(BaseInterpretor):
         is_causal: Optional[torch.BoolTensor] = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
+        return_base_states: bool = False,
+        return_intervened_states: bool = False,
     ) -> InterpretorModelOutput:
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
@@ -1024,6 +1027,8 @@ class SteeringInterpretor(BaseInterpretor):
             target_position_ids=target_position_ids,
             intervention_layers=intervention_layers,
             intervention_positions=intervention_positions,
+            return_base_states=return_base_states,
+            return_intervened_states=return_intervened_states,
         )
 
         if labels is not None and "sft" in self.config.model.objective:
@@ -1077,7 +1082,10 @@ class SteeringInterpretor(BaseInterpretor):
 
                 _pred["sparsity_loss"] = sparsity_loss
 
-        if "reconstruction" in self.config.model.objective:
+        if (
+            target_weights is not None
+            and "reconstruction" in self.config.model.objective
+        ):
             mse_criterion = torch.nn.MSELoss(reduction="mean")
             similarity_criterion = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
             # (B, P, H)
@@ -1109,8 +1117,10 @@ class SteeringInterpretor(BaseInterpretor):
             else:
                 _pred["reconstruction_loss"] = reconstruction_loss
                 total_loss = reconstruction_loss
-        else:
+        elif "sft" in self.config.model.objective:
             total_loss = sft_loss
+        else:
+            total_loss = None
 
         _pred["loss"] = total_loss
         return _pred
@@ -1138,9 +1148,9 @@ class SteeringInterpretor(BaseInterpretor):
         num_batches = 0
 
         for step, batch in enumerate(
-            tqdm(test_dataloader.data_loader, desc="eval steps")
+            tqdm(test_dataloader.data_loader, desc="steering eval steps")
         ):
-            if self.max_eval_steps >= 0 and step >= self.max_eval_steps:
+            if self.max_test_steps >= 0 and step >= self.max_test_steps:
                 break
 
             # Move batch to GPU
@@ -1185,10 +1195,15 @@ class SteeringInterpretor(BaseInterpretor):
         for key, value in loss_accumulators.items():
             metrics[key] = value / num_batches
 
-        dataset_df = pd.DataFrame(test_dataloader.raw)
-        concept_dfs = dataset_df[dataset_df["concept_id"] != -1].groupby("concept_id")
+    @torch.no_grad()
+    def evaluate(self, eval_dataset: datasets.Dataset | None):
+        dataset_df = pd.DataFrame(eval_dataset)
 
-        for concept_id, concept_df in concept_dfs:
+        concept_dfs = dataset_df[dataset_df["concept_id"] != -1].groupby("concept_id")
+        metrics = {}
+
+        for concept_id, concept_df in tqdm(concept_dfs, desc="concepts"):
+            all_max_act = []
             # Load concept detection dataset
             if (
                 self.config.model.concept_detection
@@ -1196,76 +1211,77 @@ class SteeringInterpretor(BaseInterpretor):
             ):
                 batch_size = self.config.training.test_batch_size
                 # Process in batches
-                for i in tqdm(
-                    range(0, len(concept_df), batch_size),
-                    desc="eval steps",
-                ):
-                    batch = concept_df.raw[i : i + batch_size]
+                for i in range(0, len(concept_df), batch_size):
+                    raw_batch = concept_df.iloc[i : i + batch_size]
+                    raw_batch = list(map(lambda x: x._asdict(), raw_batch.itertuples()))
                     # compute batch from raw batch
-                    input_batch = get_axbench_collate_fn(
-                        self.target_model_tokenizer,
-                        mode="concept",
-                        intervention_layers=self.config.model.intervention_layers,
+                    batch = get_axbench_collate_fn(
+                        None,
+                        target_tokenizer=self.target_model_tokenizer,
+                        modes=["eval_concept"],
+                        intervention_layers=self.config.model.intervention_layer,
                         intervention_positions=self.config.model.intervention_positions,
-                    )(batch)
+                    )(raw_batch)
                     # Move batch to GPU
-                    input_batch = {k: v.to(self.device) for k, v in input_batch.items()}
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
 
-                    # Create activation gathering hook
-                    gather_acts = None
-
-                    def act_gather_layer_hook(module, input, output):
-                        nonlocal gather_acts
-                        gather_acts = output[0]
-                        return output
-
-                    hooks = (
-                        self.interpretor.target_model.model.layers[
-                            self.config.model.intervention_layers[0] - 1
-                        ],
-                        act_gather_layer_hook,
+                    outputs = self.forward(
+                        editor_input_ids=batch.get("editor_input_ids", None),
+                        target_input_ids=batch.get("target_input_ids", None),
+                        target_attention_mask=batch.get("target_attention_mask", None),
+                        target_position_ids=batch.get("target_position_ids", None),
+                        intervention_layers=batch.get("intervention_layers", None),
+                        intervention_positions=batch.get(
+                            "intervention_positions", None
+                        ),
+                        is_causal=batch.get("is_causal", None),
+                        return_intervened_states=True,
                     )
 
-                    with add_fwd_hooks(hooks):
-                        outputs = self.forward(
-                            editor_input_ids=batch.get("editor_input_ids", None),
-                            base_input_ids=batch.get("base_input_ids", None),
-                            base_attention_mask=batch.get("base_attention_mask", None),
-                            base_intervention_mask=batch.get(
-                                "base_intervention_mask", None
-                            ),
-                            target_input_ids=batch.get("target_input_ids", None),
-                            target_attention_mask=batch.get(
-                                "target_attention_mask", None
-                            ),
-                            target_position_ids=batch.get("target_position_ids", None),
-                            target_weights=batch.get("reconstruction_targets", None),
-                            intervention_layers=batch.get("intervention_layers", None),
-                            intervention_positions=batch.get(
-                                "intervention_positions", None
-                            ),
-                            labels=batch.get("labels", None),
-                            is_causal=batch.get("is_causal", None),
+                    gathered_intervened_acts = outputs.gathered_intervened_states[0]
+
+                    # Compute detection scores (only one layer for now)
+                    # avg across batch because identical within a concept
+                    weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :].mean(0)
+
+                    detection_scores = torch.relu(
+                        einops.einsum(
+                            gathered_intervened_acts,
+                            weights.transpose(-1, -2),
+                            "b s h, h j -> b s",
                         )
+                    )
 
-                    seq_lens = (
-                        input_batch["editor_input_ids"]
-                        != self.target_model_tokenizer.eos_token_id
-                    ).sum(-1)
-                    for seq_idx, seq_len in enumerate(seq_lens):
-                        pass
+                    attn_mask = batch["target_attention_mask"]
+                    for seq_idx, act in enumerate(detection_scores):
+                        acts = act[attn_mask[seq_idx] > 0].float().cpu().numpy()
+                        acts = [round(x, 3) for x in acts]
+                        max_act = max(acts)
+                        all_max_act.append(max_act)
+            else:
+                return None
 
-                # TODO add to metrics here
+            concept_df[f"{self.config.model.target_model_name_or_path}_max_act"] = (
+                all_max_act
+            )
+
+            evaluator = LatentStatsEvaluator(
+                self.config.model.target_model_name_or_path
+            )
+            eval_results = evaluator.compute_metrics(concept_df)
+            metrics[f"concept_{concept_id}"] = eval_results
 
         return metrics
 
     def run_train(
         self,
         train_loader,
-        test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
+        test_loader: NamedDataLoader | List[NamedDataLoader] | None = None,
+        eval_dataset: datasets.Dataset | None = None,
     ):
         epochs = self.config.training.n_epochs
         steps = self.config.training.n_steps
+        test_per_steps = self.config.training.test_per_steps
         eval_per_steps = self.config.training.eval_per_steps
         checkpoint_per_steps = self.config.training.checkpoint_per_steps
         save_dir = self.config.training.save_dir
@@ -1308,18 +1324,30 @@ class SteeringInterpretor(BaseInterpretor):
                     if cur_steps >= total_steps:
                         logger.info("Training stopped. Reached max steps.")
                         break
-                    if eval_per_steps is not None:
-                        if cur_steps % eval_per_steps == 0:
+                    if test_per_steps is not None:
+                        if cur_steps % test_per_steps == 0:
                             metrics = {}
                             for loader in test_loader:
                                 metrics[loader.name] = self.predict(loader)
-
                             # Dump to json file
                             if save_dir is not None:
                                 metrics_path = os.path.join(
                                     save_dir,
                                     run_name,
-                                    f"metrics_epoch_{epoch}_step_{cur_steps}.json",
+                                    f"test_metrics_epoch_{epoch}_step_{cur_steps}.json",
+                                )
+                                os.makedirs(
+                                    os.path.dirname(metrics_path), exist_ok=True
+                                )
+                                with open(metrics_path, "w") as f:
+                                    json.dump(metrics, f, indent=2)
+                        if eval_dataset and cur_steps % eval_per_steps == 0:
+                            metrics = self.evaluate(eval_dataset)
+                            if save_dir is not None:
+                                metrics_path = os.path.join(
+                                    save_dir,
+                                    run_name,
+                                    f"eval_metrics_epoch_{epoch}_step_{cur_steps}.json",
                                 )
                                 os.makedirs(
                                     os.path.dirname(metrics_path), exist_ok=True
@@ -1455,10 +1483,12 @@ class SteeringInterpretor(BaseInterpretor):
                         }
                     )
 
-        if self.config.training.max_eval_steps != 0:
+        if self.config.training.max_test_steps != 0:
             result_dict = {}
             for tl in test_loader:
                 result_dict[tl.name] = self.predict(tl)
+            if eval_dataset:
+                result_dict["eval"] = self.evaluate(eval_dataset)
 
         # Save the final model
         if save_model and save_dir:

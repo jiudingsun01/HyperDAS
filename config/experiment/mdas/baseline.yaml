@@ -15,7 +15,7 @@ training:
   n_epochs: 5
   lr: 1e-4
   causal_loss_weight: 1.0
-  eval_per_steps: 100
+  test_per_steps: 100
   save_model: false
 
 wandb_config:

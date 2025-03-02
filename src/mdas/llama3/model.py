@@ -179,7 +179,7 @@ class RavelMDASNetwork(nn.Module):
         train_loader,
         test_loader=None,
         epochs=1,
-        eval_per_steps: int = None,
+        test_per_steps: int = None,
         checkpoint_per_steps: int = None,
         causal_loss_weight=1.0,
         lr=3e-4,
@@ -220,8 +220,8 @@ class RavelMDASNetwork(nn.Module):
                 for step, batch in enumerate(
                     train_loader
                 ):  
-                    if eval_per_steps is not None:
-                        if cur_steps % eval_per_steps == 0:
+                    if test_per_steps is not None:
+                        if cur_steps % test_per_steps == 0:
                             accuracies = self.eval_accuracy(
                                 test_loader, eval_n_label_tokens=3
                             )

@@ -38,7 +38,7 @@ def run_experiment(
     das_dimension=None,
     lr=3e-5,
     weight_decay=0.01,
-    eval_per_steps=100,
+    test_per_steps=100,
     checkpoint_per_steps=500,
     test_path=None,
     train_path=None,
@@ -118,7 +118,7 @@ def run_experiment(
         inference_modes=inference_modes,
         epochs=n_epochs,
         checkpoint_per_steps = checkpoint_per_steps,
-        eval_per_steps = eval_per_steps,
+        test_per_steps = test_per_steps,
         save_dir=save_dir,
         apply_source_selection_sparsity_loss=source_selection_sparsity_loss,
         causal_loss_weight=causal_loss_weight,
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=100)
+    parser.add_argument("--test_per_steps", type=int, default=100)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()

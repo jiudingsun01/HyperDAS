@@ -27,7 +27,7 @@ if __name__ == "__main__":
             n_epochs=10,
             lr=3e-5,
             weight_decay=0.01,
-            eval_per_steps=100,
+            test_per_steps=100,
             checkpoint_per_steps=None,
             test_path="../../experiments/ravel/data/ravel_city_Country_test",
             train_path="../../experiments/ravel/data/ravel_city_Country_train",

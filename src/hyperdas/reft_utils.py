@@ -360,6 +360,7 @@ class BatchLsReftIntervention(nn.Module):
 
         return InterventionModuleOutput(
             mixed_output=intervened_output.to(base.dtype),
+            base=base,
             metrics={},
             extra_outputs={
                 "detect_latent": detect_latent,
@@ -504,7 +505,7 @@ class BatchLoreftIntervention(nn.Module):
         mixed_output[batch_indices, intervention_positions] = mixed_states.squeeze()
 
         return InterventionModuleOutput(
-            mixed_output=mixed_output.to(base.dtype), metrics=metrics
+            mixed_output=mixed_output.to(base.dtype), base=base, metrics=metrics
         )
 
 
@@ -565,7 +566,7 @@ class SelectiveLoreftIntervention(
             torch.transpose(reflected_weight, 1, 2),
         )
         return InterventionModuleOutput(
-            mixed_output=self.dropout(output.to(base.dtype)), metrics=metrics
+            mixed_output=self.dropout(output.to(base.dtype)), base=base, metrics=metrics
         )
 
     def state_dict(self, *args, **kwargs):

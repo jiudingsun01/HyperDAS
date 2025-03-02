@@ -1,6 +1,7 @@
 import os
 import random
-from typing import Literal
+from enum import Enum
+from typing import List, Literal
 
 import datasets
 import numpy as np
@@ -113,15 +114,66 @@ def split_axbench_train_test_fast(
 
 
 def split_axbench_reconstruction_train_test(
-    reconstruction_data_path: str,
+    dataset: datasets.Dataset,
     split_by="concept",
     train_ratio=0.8,
     seed=42,
 ):
     """Split an axbench reconstruction dataset into train and test sets using HF Dataset operations."""
-    lsreft = torch.load(f"{reconstruction_data_path}/LsReFT_weight.pt")
-    lsreft_metadata = load_jsonl(f"{reconstruction_data_path}/metadata.jsonl")
+
+    if split_by == "concept":
+        # Get unique concept IDs
+        concept_ids = set(dataset["concept_id"])
+
+        random.seed(seed)
+        train_concept_ids = set(
+            random.sample(list(concept_ids), int(len(concept_ids) * train_ratio))
+        )
+
+        # Create filter functions
+        def is_train(x):
+            return x["concept_id"] in train_concept_ids
+
+        def is_test(x):
+            return x["concept_id"] not in train_concept_ids
+
+        # Split based on concepts
+        train_dataset = dataset.filter(is_train)
+        test_dataset = dataset.filter(is_test)
+
+    elif split_by == "example":
+        raise NotImplementedError("Example-based splitting not implemented")
+
+    elif split_by == "random":
+        # Shuffle and split
+        dataset = dataset.shuffle(seed=seed)
+        split_dict = dataset.train_test_split(
+            train_size=train_ratio,
+            seed=seed,
+        )
+        train_dataset = split_dict["train"]
+        test_dataset = split_dict["test"]
+
+    return train_dataset, test_dataset
+
+
+def load_axbench_reconstruction_data(
+    reconstruction_data_path: str,
+):
+    lsreft_path = f"{reconstruction_data_path}/LsReFT_weight.pt"
+    rank0_lsreft_path = f"{reconstruction_data_path}/rank_0_LsReFT_weight.pt"
+    lsreft = torch.load(
+        lsreft_path if os.path.exists(lsreft_path) else rank0_lsreft_path
+    )
+
+    metadata_path = f"{reconstruction_data_path}/metadata.jsonl"
+    rank0_metadata_path = f"{reconstruction_data_path}/rank_0_metadata.jsonl"
+    lsreft_metadata = load_jsonl(
+        metadata_path if os.path.exists(metadata_path) else rank0_metadata_path
+    )
+
     assert lsreft.shape[0] == len(lsreft_metadata), "Length mismatch"
+
     # Create a mapping from concept_id to subspace tensor
     concept_to_subspace = {}
     for idx, metadata_entry in enumerate(lsreft_metadata):
@@ -131,39 +183,6 @@ def split_axbench_reconstruction_train_test(
     for metadata_entry in lsreft_metadata:
         metadata_entry["subspace"] = concept_to_subspace[metadata_entry["concept_id"]]
 
-    if split_by == "concept":
-        # Get unique concept IDs
-        concept_ids = set(entry["concept_id"] for entry in lsreft_metadata)
-
-        random.seed(seed)
-        train_concept_ids = set(
-            random.sample(list(concept_ids), int(len(concept_ids) * train_ratio))
-        )
-
-        train_dataset = [
-            entry
-            for entry in lsreft_metadata
-            if entry["concept_id"] in train_concept_ids
-        ]
-        test_dataset = [
-            entry
-            for entry in lsreft_metadata
-            if entry["concept_id"] not in train_concept_ids
-        ]
-
-    elif split_by == "example":
-        raise NotImplementedError("Example-based splitting not implemented")
-
-    elif split_by == "random":
-        random.seed(seed)
-        shuffled_data = lsreft_metadata.copy()
-        random.shuffle(shuffled_data)
-
-        split_idx = int(len(shuffled_data) * train_ratio)
-        train_dataset = shuffled_data[:split_idx]
-        test_dataset = shuffled_data[split_idx:]
-
-    # Convert to HF datasets, ensuring tensors are preserved
     features = datasets.Features(
         {
             "concept_id": datasets.Value("string"),
@@ -174,16 +193,17 @@ def split_axbench_reconstruction_train_test(
         }
     )
 
-    train_dataset = datasets.Dataset.from_list(train_dataset, features=features)
-    test_dataset = datasets.Dataset.from_list(test_dataset, features=features)
-
-    return train_dataset, test_dataset
+    return datasets.Dataset.from_list(
+        lsreft_metadata,
+        features=features,
+    )
 
 
 def combine_concept_reconstruction_datasets(
     concept_train_dataset: datasets.Dataset,
     concept_test_dataset: datasets.Dataset | None,
-    reconstruction_data_path: str,
+    train_reconstruction: str | None,
+    test_reconstruction: str | None,
     split_by="concept",
     train_ratio=0.8,
     seed=42,
@@ -192,12 +212,15 @@ def combine_concept_reconstruction_datasets(
 ):
     """Combine concept dataset with reconstruction data by matching concept IDs."""
     # Split reconstruction data
-    train_lsreft, test_lsreft = split_axbench_reconstruction_train_test(
-        reconstruction_data_path=reconstruction_data_path,
-        split_by=split_by,
-        train_ratio=train_ratio,
-        seed=seed,
-    )
+    if not test_reconstruction:
+        train_reconstruction, test_reconstruction = (
+            split_axbench_reconstruction_train_test(
+                train_reconstruction,
+                split_by=split_by,
+                train_ratio=train_ratio,
+                seed=seed,
+            )
+        )
 
     if concept_test_dataset is None:
         concept_train_dataset, concept_test_dataset = split_axbench_train_test(
@@ -208,10 +231,16 @@ def combine_concept_reconstruction_datasets(
         )
 
     train_lsreft_df = pd.DataFrame(
-        {"concept_id": train_lsreft["concept_id"], "subspace": train_lsreft["subspace"]}
+        {
+            "concept_id": train_reconstruction["concept_id"],
+            "subspace": train_reconstruction["subspace"],
+        }
     )
     test_lsreft_df = pd.DataFrame(
-        {"concept_id": test_lsreft["concept_id"], "subspace": test_lsreft["subspace"]}
+        {
+            "concept_id": test_reconstruction["concept_id"],
+            "subspace": test_reconstruction["subspace"],
+        }
     )
 
     def _add_subspaces_to_dataset(concept_dataset, lsreft_df, cache_file_name=None):
@@ -260,7 +289,7 @@ def tokenize_text_inputs(
     # TODO(sid): we should add padding to multiple of 8, for example, to improve training efficiency.
     if add_space_before_target:
         input_texts = []
-        for ipt, targ in zip(inputs, targets):
+        for ipt, targ in zip(inputs, targets or [""] * len(inputs)):
             if (
                 ipt.endswith(" ")
                 or ipt.endswith('"')
@@ -343,34 +372,72 @@ def parse_positions_varlen(positions: str, seq_len: int):
     return []
 
 
+class AxbenchMode(str, Enum):
+    TRAIN_STEERING = "train_steering"
+    EVAL_STEERING = "eval_steering"
+    PROMPT_STEERING = "prompt_steering"
+    TRAIN_CONCEPT = "train_concept"
+    EVAL_CONCEPT = "eval_concept"
+
+
 def get_axbench_collate_fn(
     hypernet_tokenizer,
     target_tokenizer=None,
-    mode: Literal[
-        "steering_train", "steering_eval", "steering_prompt", "concept"
-    ] = "steering_train",
+    modes: List[AxbenchMode] = ["train_steering"],
     intervention_layers=None,
     intervention_positions=None,
     objective="sft",
 ):
-    # TODO need to implement grabbing reft parameters for supervised training/regression objective
     def sft_collate_fn(batch):
         inputs, edit_instructions, targets = [], [], []
 
         for b in batch:
-            inputs.append(
-                b["input"] if mode != "steering_prompt" else b["steered_input"]
-            )
-            edit_instructions.append(
-                b["input_concept"]
-                if mode in ["steering_eval", "steering_prompt"]
-                else b["output_concept"]
-            )
-            if mode not in ["steering_eval", "steering_prompt"]:
-                targets.append(b["output"])
-            else:
-                # Dummy since we are not using labels
-                targets.append("")
+            input_added = False
+            edit_instruction_added = False
+
+            if AxbenchMode.TRAIN_CONCEPT in modes:
+                if not input_added:
+                    inputs.append(b["input"])
+                    input_added = True
+                if not edit_instruction_added:
+                    edit_instructions.append(b["output_concept"])
+                    edit_instruction_added = True
+
+            if AxbenchMode.EVAL_CONCEPT in modes:
+                if not input_added:
+                    inputs.append(b["input"])
+                    input_added = True
+                if not edit_instruction_added:
+                    edit_instructions.append(
+                        b["input_concept"]
+                        if "input_concept" in b
+                        else b["output_concept"]
+                    )
+                    edit_instruction_added = True
+
+            if AxbenchMode.PROMPT_STEERING in modes:
+                if not input_added:
+                    inputs.append(b["steered_input"])
+                    input_added = True
+                if not edit_instruction_added:
+                    edit_instructions.append(b["input_concept"])
+                    edit_instruction_added = True
+
+            if AxbenchMode.TRAIN_STEERING in modes:
+                if not input_added:
+                    inputs.append(b["input"])
+                    input_added = True
+                if not edit_instruction_added:
+                    edit_instructions.append(b["output_concept"])
+                    edit_instruction_added = True
+
+            if AxbenchMode.EVAL_STEERING in modes:
+                if not input_added:
+                    inputs.append(b["input"])
+                    input_added = True
+                if not edit_instruction_added:
+                    edit_instructions.append(b["input_concept"])
+                    edit_instruction_added = True
 
         is_causal = torch.tensor([1 for _ in batch])
         returned_dict = {
@@ -405,7 +472,12 @@ def get_axbench_collate_fn(
             returned_dict.update(target_inputs)
 
         # create intervention layer and positions
-        if "steering" in mode:
+        if (
+            AxbenchMode.TRAIN_STEERING in modes
+            or AxbenchMode.EVAL_STEERING in modes
+            or AxbenchMode.TRAIN_CONCEPT in modes
+            or AxbenchMode.EVAL_CONCEPT in modes
+        ):
             # TODO(sid): we can eventually add padding to support variable position interventions within batch
             intervention_pos = torch.tensor(
                 [
@@ -425,18 +497,30 @@ def get_axbench_collate_fn(
     def reconstruction_collate_fn(batch):
         edit_instructions, reconstruction_targets = [], []
         for b in batch:
-            if "sft" in objective:
-                edit_instructions.append(
-                    b["input_concept"]
-                    if mode in ["steering_eval", "steering_prompt"]
-                    else b["output_concept"]
-                )
-            else:
-                edit_instructions.append(b["concept"])
-            if mode == "steering_train":
-                # We only have subspace labels for training,
-                # inference is done as steering with the generated subspaces
-                reconstruction_targets.append(torch.tensor(b["subspace"]))
+            edit_instruction_added = False
+
+            if (
+                AxbenchMode.TRAIN_CONCEPT in modes
+                or AxbenchMode.TRAIN_STEERING in modes
+            ):
+                if not edit_instruction_added:
+                    edit_instructions.append(b["concept"])
+                    edit_instruction_added = True
+
+                if "reconstruction" in objective:
+                    # We only have subspace labels for training,
+                    # inference is done as steering with the generated subspaces
+                    reconstruction_targets.append(torch.tensor(b["subspace"]))
+
+            if AxbenchMode.EVAL_CONCEPT in modes:
+                if not edit_instruction_added:
+                    edit_instructions.append(b["concept"])
+                    edit_instruction_added = True
+
+            if AxbenchMode.EVAL_STEERING in modes:
+                if not edit_instruction_added:
+                    edit_instructions.append(b["input_concept"])
+                    edit_instruction_added = True
 
         returned_dict = {
             "editor_input_ids": target_tokenizer(

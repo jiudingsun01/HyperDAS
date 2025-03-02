@@ -6,6 +6,7 @@ train_path: "experiments/axbench/data/concept16k_2b_l20"
 test_path: "experiments/axbench/data/concept500_2b_l20"
 reconstruction_train_path: "assets/data/axbench/prod_2b_l20_concept16k_lsreft/train"
 reconstruction_test_path: "assets/data/axbench/prod_2b_l20_concept500_lsreft/test"
+eval_path: "experiments/axbench/data/concept500_2b_l20"
 dataset_type: axbench
-axbench_mode: steering_train
+axbench_mode: train 
 split_by: concept

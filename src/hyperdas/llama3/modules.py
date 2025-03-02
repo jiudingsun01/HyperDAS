@@ -798,11 +798,8 @@ class LlamaInterpretorForSteering(nn.Module):
                 intervention_positions=intervention_positions,
                 batch_weights=weight_matrix,
             )
-        mixed_output = intervention_output.output
-        metrics = intervention_output.metrics
-        extra_outputs = intervention_output.extra_outputs
 
-        return mixed_output, metrics, extra_outputs
+        return intervention_output
 
     def forward(
         self,
@@ -820,6 +817,8 @@ class LlamaInterpretorForSteering(nn.Module):
         intervention_positions: torch.LongTensor | None = None,
         run_weight_generation: bool = True,
         generation: bool = False,
+        return_base_states: bool = False,
+        return_intervened_states: bool = False,
         **kwargs,
     ) -> InterpretorModelOutput:
         if intervention_layers is None:
@@ -970,6 +969,9 @@ class LlamaInterpretorForSteering(nn.Module):
         if not generation:
             # Run target model with edit vectors.
             # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
+            self._temp_global_cache["gathered_base_states"] = tuple()
+            self._temp_global_cache["gathered_intervened_states"] = tuple()
+
             def representation_swap(module, input, output, current_layer_rel_idx=0):
                 nonlocal metrics
                 nonlocal extra_outputs
@@ -978,6 +980,14 @@ class LlamaInterpretorForSteering(nn.Module):
                 output = self._apply_intervention(
                     output[0], intervention_positions=intervention_positions
                 )
+
+                if return_base_states:
+                    self._temp_global_cache["gathered_base_states"] += (output.base,)
+                if return_intervened_states:
+                    self._temp_global_cache["gathered_intervened_states"] += (
+                        output.mixed_output,
+                    )
+
                 metrics, extra_outputs = output.metrics, output.extra_outputs
                 output[0][:] += output.mixed_output
 
@@ -1007,10 +1017,6 @@ class LlamaInterpretorForSteering(nn.Module):
             else:
                 logits = None
 
-            # Clear cache of outdated entries in next forward pass to save memory
-            # only during training in inference we manually handle
-            self._temp_global_cache.clear()
-
             output = InterpretorModelOutput(logits=logits)
             output.metrics = metrics
             output.extra_outputs = {}
@@ -1027,6 +1033,21 @@ class LlamaInterpretorForSteering(nn.Module):
                 output.extra_outputs["weight_matrix"] = weight_matrix
             else:
                 output.target_hidden_states = target_result.hidden_states
+
+            if return_base_states:
+                output.gathered_base_states = self._temp_global_cache[
+                    "gathered_base_states"
+                ]
+
+            if return_intervened_states:
+                output.gathered_intervened_states = self._temp_global_cache[
+                    "gathered_intervened_states"
+                ]
+
+            # Clear cache of outdated entries in next forward pass to save memory
+            # only during training in inference we manually handle
+            self._temp_global_cache.clear()
+
         else:
             output = None
 

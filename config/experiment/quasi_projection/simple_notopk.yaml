@@ -19,7 +19,7 @@ training:
   n_epochs: 1
   n_steps: 500
   train_batch_size: 32
-  eval_per_steps: 100
+  test_per_steps: 100
   compute_metrics: true
   debug_model: true
 

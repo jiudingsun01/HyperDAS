@@ -563,7 +563,7 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
         test_loader=None,
         inference_modes=[None],
         epochs=1,
-        eval_per_steps: int = None,
+        test_per_steps: int = None,
         checkpoint_per_steps: int = None,
         apply_source_selection_sparsity_loss=False,
         causal_loss_weight=1.0,
@@ -614,8 +614,8 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
                 for step, batch in enumerate(
                     train_loader
                 ):  
-                    if eval_per_steps is not None:
-                        if cur_steps % eval_per_steps == 0:
+                    if test_per_steps is not None:
+                        if cur_steps % test_per_steps == 0:
                             # Evaluate the model
                             
                             for mode in inference_modes:

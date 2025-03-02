@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ast import Tuple
+from asyncio import gather
 import contextlib
 from collections import namedtuple
 from contextlib import contextmanager
@@ -125,6 +127,8 @@ class EditorModelOutput(BaseModelOutput):
 @dataclass
 class InterpretorModelOutput(BaseModelOutput):
     logits: Optional[torch.Tensor] = None
+    gathered_base_states: Optional[Tuple[torch.Tensor]] = None
+    gathered_intervened_states: Optional[Tuple[torch.Tensor]] = None
     target_hidden_states: Optional[torch.Tensor] = None
     source_intervention_weight: Optional[torch.Tensor] = None
     base_intervention_weight: Optional[torch.Tensor] = None
@@ -146,6 +150,7 @@ class InterpretorModelOutputWithLearnedSource(InterpretorModelOutput):
 @dataclass
 class InterventionModuleOutput(ModelOutput):
     mixed_output: torch.Tensor = None
+    base: torch.Tensor = None
     metrics: Dict[str, Any] = None
     extra_outputs: Dict[str, torch.Tensor] = None
 

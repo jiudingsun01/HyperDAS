@@ -3,9 +3,10 @@ n_steps: -1
 train_batch_size: 16
 test_batch_size: 64
 lr: 1e-4
-eval_per_steps: 100
+test_per_steps: 100
+eval_per_steps: -1
 checkpoint_per_steps: null
-max_eval_steps: -1
+max_test_steps: -1
 num_workers: 0
 seed: 42
 save_dir: "assets/checkpoints"

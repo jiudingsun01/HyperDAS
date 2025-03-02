@@ -21,6 +21,7 @@ from src.common.utils import load_wrapper, setup_tokenizer
 from src.hyperdas.data import get_axbench_collate_fn, get_ravel_collate_fn
 from src.hyperdas.data.axbench import (
     combine_concept_reconstruction_datasets,
+    load_axbench_reconstruction_data,
     split_axbench_reconstruction_train_test,
     split_axbench_train_test_fast,
 )
@@ -115,6 +116,12 @@ def run_experiment(
                 test_set = load_wrapper(config.dataset.test_path, split="test")
     elif config.model.objective == "sft+reconstruction":
         assert config.dataset.dataset_type == "axbench"
+        train_reconstruction = load_axbench_reconstruction_data(
+            config.dataset.reconstruction_train_path
+        )
+        test_reconstruction = load_axbench_reconstruction_data(
+            config.dataset.reconstruction_test_path
+        )
         train_set, test_set = combine_concept_reconstruction_datasets(
             concept_train_dataset=load_wrapper(
                 config.dataset.train_path, split="train"
@@ -122,25 +129,44 @@ def run_experiment(
             concept_test_dataset=load_wrapper(config.dataset.test_path, split="test")
             if config.dataset.test_path
             else None,
-            reconstruction_data_path=config.dataset.reconstruction_train_path,
-            split_by=config.dataset.split_by,
-            train_ratio=config.dataset.train_ratio,
-            seed=config.dataset.seed,
-        )
-    elif config.model.objective == "reconstruction":
-        assert config.dataset.dataset_type == "axbench"
-        train_set, test_set = split_axbench_reconstruction_train_test(
-            reconstruction_data_path=config.dataset.reconstruction_train_path,
+            train_reconstruction=train_reconstruction,
+            test_reconstruction=test_reconstruction,
             split_by=config.dataset.split_by,
             train_ratio=config.dataset.train_ratio,
             seed=config.dataset.seed,
         )
 
+    elif config.model.objective == "reconstruction":
+        assert config.dataset.dataset_type == "axbench"
+        train_set = load_axbench_reconstruction_data(
+            config.dataset.reconstruction_train_path
+        )
+
+        if not config.dataset.reconstruction_test_path:
+            logger.debug(
+                "Splitting axbench reconstruction train set into train and test sets"
+            )
+            train_set, test_set = split_axbench_reconstruction_train_test(
+                train_set,
+                split_by=config.dataset.split_by,
+                train_ratio=config.dataset.train_ratio,
+                seed=config.dataset.seed,
+            )
+        else:
+            test_set = load_axbench_reconstruction_data(
+                config.dataset.reconstruction_test_path
+            )
+
+    if config.dataset.eval_path:
+        eval_dataset = load_wrapper(config.dataset.eval_path)
+    else:
+        eval_dataset = None
+
     if config.dataset.dataset_type == "axbench":
         collate_fn = get_axbench_collate_fn(
             hypernet_tokenizer,
             target_tokenizer=target_tokenizer,
-            mode=config.dataset.axbench_mode,
+            modes=config.dataset.axbench_mode,
             intervention_layers=config.model.intervention_layer,
             intervention_positions=config.model.intervention_positions,
             objective=config.model.objective,
@@ -216,7 +242,11 @@ def run_experiment(
         logger.info(f"Loading model from {config.training.load_trained_from}")
         hypernetwork.load_model(config.training.load_trained_from)
 
-    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
+    hypernetwork.run_train(
+        train_loader=train_data_loader,
+        test_loader=test_data_loader,
+        eval_dataset=eval_dataset,
+    )
 
     if config.wandb_config.log:
         wandb.finish()
