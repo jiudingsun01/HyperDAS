@@ -599,47 +599,46 @@ def infer_steering(config, rank, world_size, device, logger):
 
 
 def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
-    try:
-        if cfg.axbench.type == "steering":
-            infer_steering(
-                cfg,
-                0,
-                1,
-                device,
-                get_logger("inference"),
-            )
-        elif cfg.axbench.type == "latent":
-            infer_latent(
-                cfg,
-                0,
-                1,
-                device,
-                get_logger("inference"),
-                cfg.axbench.train,
-                cfg.axbench.generate,
-            )
-        elif cfg.axbench.type == "all":
-            infer_steering(
-                cfg,
-                0,
-                1,
-                device,
-                get_logger("inference"),
-            )
-            infer_latent(
-                cfg,
-                0,
-                1,
-                device,
-                get_logger("inference"),
-                cfg.axbench.train,
-                cfg.axbench.generate,
-            )
-    except Exception as e:
-        if "dataset_factory" in globals():
-            dataset_factory.save_cache()  # type: ignore # noqa: F821
-            dataset_factory.reset_stats()  # type: ignore # noqa: F821
-        raise e
+    assert cfg.training.load_trained_from is not None, (
+        "Please specify a checkpoint to load from"
+    )
+    cfg.axbench.inference.dump_dir = cfg.training.load_trained_from
+
+    if cfg.axbench.type == "steering":
+        infer_steering(
+            cfg,
+            0,
+            1,
+            device,
+            get_logger("inference"),
+        )
+    elif cfg.axbench.type == "latent":
+        infer_latent(
+            cfg,
+            0,
+            1,
+            device,
+            get_logger("inference"),
+            cfg.axbench.train,
+            cfg.axbench.generate,
+        )
+    elif cfg.axbench.type == "all":
+        infer_steering(
+            cfg,
+            0,
+            1,
+            device,
+            get_logger("inference"),
+        )
+        infer_latent(
+            cfg,
+            0,
+            1,
+            device,
+            get_logger("inference"),
+            cfg.axbench.train,
+            cfg.axbench.generate,
+        )
 
 
 def infer_latent(
@@ -647,6 +646,7 @@ def infer_latent(
 ):
     data_dir = Path(config.axbench.inference.data_dir)
     dump_dir = Path(config.training.load_trained_from or "assets/aux")
+
     num_of_examples = config.axbench.inference.steering_num_of_examples
     metadata = load_metadata_flatten(data_dir / METADATA_FILE)
 

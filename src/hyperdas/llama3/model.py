@@ -1131,9 +1131,8 @@ class SteeringInterpretor(BaseInterpretor):
                     self.config.model.topk_sparsity_weight
                     * non_topk_latents.norm(p=1, dim=-1).mean()
                 )
-                sft_loss += sparsity_loss
-
                 _pred["sparsity_loss"] = sparsity_loss
+                sft_loss += sparsity_loss
 
         if (
             target_weights is not None
@@ -1166,7 +1165,12 @@ class SteeringInterpretor(BaseInterpretor):
                 _pred["reconstruction_loss"] = (
                     self.config.model.reconstruction_loss_weight * reconstruction_loss
                 )
-                _pred["sft_loss"] = self.config.model.sft_loss_weight * sft_loss
+                if "sparsity_loss" in _pred:
+                    _pred["sft_loss"] = self.config.model.sft_loss_weight * (
+                        sft_loss - _pred["sparsity_loss"]
+                    )
+                else:
+                    _pred["sft_loss"] = self.config.model.sft_loss_weight * sft_loss
             else:
                 _pred["reconstruction_loss"] = reconstruction_loss
                 total_loss = reconstruction_loss
@@ -1457,7 +1461,9 @@ class SteeringInterpretor(BaseInterpretor):
                         "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "grad_norm": total_grad_norm.item(),
-                        "learning_rate": self.opt.param_groups[0]["lr"],
+                        "learning_rate": self.lr_scheduler.get_last_lr()[0]
+                        if self.lr_scheduler
+                        else self.opt.param_groups[0]["lr"],
                         **prediction.metrics,
                         **grad_norm_metrics,
                         **loss_metrics,

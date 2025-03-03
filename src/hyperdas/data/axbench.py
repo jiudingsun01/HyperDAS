@@ -1,7 +1,7 @@
 import os
 import random
 from enum import Enum
-from typing import List, Literal
+from typing import List
 
 import datasets
 import numpy as np
@@ -9,6 +9,9 @@ import pandas as pd
 import torch
 
 from axbench.scripts.evaluate import load_jsonl
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def split_axbench_train_test(
@@ -74,7 +77,11 @@ def split_axbench_train_test_fast(
             pass  # If loading fails, proceed with computing the split
 
     # Filter for positive examples using multiprocessing
-    dataset = dataset.filter(lambda x: x["category"] == "positive", num_proc=num_proc)
+    dataset = dataset.filter(
+        lambda x: x["category"] == "positive",
+        num_proc=num_proc,
+        desc="Filtering positive examples",
+    )
 
     if split_by == "concept":
         concept_ids = dataset.unique("concept_id")
@@ -86,15 +93,24 @@ def split_axbench_train_test_fast(
         )
 
         # Create filter functions
-        def is_train(x):
-            return x["concept_id"] in train_concept_ids
+        def is_train(batch):
+            return [
+                concept_id in train_concept_ids for concept_id in batch["concept_id"]
+            ]
 
-        def is_test(x):
-            return x["concept_id"] not in train_concept_ids
+        def is_test(batch):
+            return [
+                concept_id not in train_concept_ids
+                for concept_id in batch["concept_id"]
+            ]
 
         # Split based on concepts using multiprocessing
-        train_dataset = dataset.filter(is_train, num_proc=num_proc)
-        test_dataset = dataset.filter(is_test, num_proc=num_proc)
+        train_dataset = dataset.filter(
+            is_train, num_proc=num_proc, desc="Splitting train", batched=True
+        )
+        test_dataset = dataset.filter(
+            is_test, num_proc=num_proc, desc="Splitting test", batched=True
+        )
 
     elif split_by == "example":
         raise NotImplementedError("Example-based splitting not implemented")
@@ -121,6 +137,7 @@ def split_axbench_reconstruction_train_test(
     split_by="concept",
     train_ratio=0.8,
     seed=42,
+    num_proc=None,
 ):
     """Split an axbench reconstruction dataset into train and test sets using HF Dataset operations."""
 
@@ -134,15 +151,30 @@ def split_axbench_reconstruction_train_test(
         )
 
         # Create filter functions
-        def is_train(x):
-            return x["concept_id"] in train_concept_ids
+        def is_train(batch):
+            return [
+                concept_id in train_concept_ids for concept_id in batch["concept_id"]
+            ]
 
-        def is_test(x):
-            return x["concept_id"] not in train_concept_ids
+        def is_test(batch):
+            return [
+                concept_id not in train_concept_ids
+                for concept_id in batch["concept_id"]
+            ]
 
-        # Split based on concepts
-        train_dataset = dataset.filter(is_train)
-        test_dataset = dataset.filter(is_test)
+        # Split based on concepts using multiprocessing
+        train_dataset = dataset.filter(
+            is_train,
+            num_proc=num_proc,
+            desc="Splitting reconstruction train by concept",
+            batched=True,
+        )
+        test_dataset = dataset.filter(
+            is_test,
+            num_proc=num_proc,
+            desc="Splitting reconstruction test by concept",
+            batched=True,
+        )
 
     elif split_by == "example":
         raise NotImplementedError("Example-based splitting not implemented")
@@ -239,25 +271,63 @@ def combine_concept_reconstruction_datasets(
         }
     )
 
-    def _add_subspaces_to_dataset(concept_dataset, lsreft_df, cache_file_name=None):
-        concept_df = concept_dataset.to_pandas()
-        concept_df = concept_df[concept_df["concept_id"] != -1]
-        # Create a dictionary mapping concept_id to subspace for quick lookup
-        subspace_dict = dict(zip(lsreft_df["concept_id"], lsreft_df["subspace"]))
-        # Filter concept_df to only include examples with concept_ids that have subspaces
-        original_count = len(concept_df)
-        concept_df = concept_df[
-            concept_df["concept_id"].apply(lambda x: str(x) in subspace_dict)
-        ]
-        filtered_count = original_count - len(concept_df)
+    def _add_subspaces_to_dataset(
+        concept_dataset: datasets.Dataset,
+        lsreft_df,
+        cache_file_name=None,
+        num_proc=None,
+    ):
+        # Try to load from cache first
+        if cache_file_name:
+            try:
+                return datasets.load_from_disk(cache_file_name)
+            except Exception:
+                logger.debug("Cache load failed, proceeding with computation")
+                pass  # If loading fails, proceed with computing the dataset
+
+        # Create a set for faster lookups
+        concept_ids_set = set(lsreft_df["concept_id"])
+
+        # First filter out invalid concept_ids using HF's filter with multiprocessing
+        original_count = len(concept_dataset)
+
+        def is_valid_concept_batch(examples):
+            # Batched version for faster processing
+            # Convert concept_ids to strings and check membership in one go
+            concept_ids = examples["concept_id"]
+            valid_mask = []
+
+            for concept_id in concept_ids:
+                # Check if concept_id is valid and in our reconstruction data
+                is_valid = concept_id != -1 and str(concept_id) in concept_ids_set
+                valid_mask.append(is_valid)
+
+            return {"keep": valid_mask}
+
+        filtered_dataset = concept_dataset.filter(
+            is_valid_concept_batch,
+            batched=True,
+            num_proc=num_proc,
+            desc="Filterig valid concepts for reconstruction",
+        )
+        filtered_count = original_count - len(filtered_dataset)
+
         if filtered_count > 0:
-            print(
+            logger.debug(
                 f"Filtered out {filtered_count} examples without matching subspaces in reconstruction data"
             )
-        # Add subspace column directly without merge
-        concept_df["subspace"] = concept_df["concept_id"].apply(
-            lambda x: subspace_dict[str(x)]
-        )
+
+        # Create a dictionary mapping concept_id to subspace for quick lookup
+        subspace_dict = dict(zip(lsreft_df["concept_id"], lsreft_df["subspace"]))
+
+        # Convert to DataFrame only after filtering to work with a smaller dataset
+        concept_df = filtered_dataset.to_pandas()
+
+        # Add subspaces using the dictionary
+        concept_df["concept_id_str"] = concept_df["concept_id"].astype(str)
+        concept_df["subspace"] = concept_df["concept_id_str"].map(subspace_dict)
+        concept_df = concept_df.drop(columns=["concept_id_str"])
+
         result_dataset = datasets.Dataset.from_pandas(concept_df)
         if cache_file_name:
             result_dataset.save_to_disk(cache_file_name)

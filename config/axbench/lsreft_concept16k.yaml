@@ -67,6 +67,7 @@ inference:
     ] # number of steering factors per example
   # master data dir is shared across all jobs.
   master_data_dir: "assets/data/axbench"
+  data_dir: axbench/axbench/concept500/prod_2b_l20_v1/generate
   seed: 42
   lm_model: "gpt-4o-mini"
   # generation related params

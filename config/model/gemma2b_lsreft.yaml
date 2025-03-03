@@ -15,7 +15,7 @@ reft_hypernetwork: "LsReFT"
 top_k: 8
 reconstruction_loss_weight: 1.0
 sft_loss_weight: 1.0
-topk_sparsity_weight: 1.0
+topk_sparsity_weight: 5e-3
 objective: "reconstruction"
 # For position axis
 weight_sharing: true

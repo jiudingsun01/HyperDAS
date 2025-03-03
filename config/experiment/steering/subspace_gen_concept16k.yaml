@@ -4,7 +4,7 @@ defaults:
   - /training/base
   - /loss/base
   - /wandb_config/base
-  - /axbench/lsreft
+  - /axbench/lsreft_concept16k
   - _self_
 
 training:
@@ -17,6 +17,8 @@ training:
   train_batch_size: 32
   test_batch_size: 16
   checkpoint_per_steps: 2000
+  scheduler_type: linear
+  warmup_ratio: 0.2
 
 model:
   max_length: 256
@@ -24,9 +26,6 @@ model:
   objective: reconstruction
   concept_detection: false
   intervention_layer: [20]
-  scheduler_type: linear
-  warmup_ratio: 0.2
-  lr: 1e-4
 
 dataset:
   eval_path: null
