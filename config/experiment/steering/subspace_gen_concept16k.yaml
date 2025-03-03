@@ -1,0 +1,35 @@
+defaults:
+  - /model/gemma2b_lsreft
+  - /dataset/concept16k_2b_l10
+  - /training/base
+  - /loss/base
+  - /wandb_config/base
+  - /axbench/lsreft
+  - _self_
+
+training:
+  lr: 3e-5
+  n_epochs: 20
+  test_per_steps: 1000
+  log_per_steps: 100
+  save_model: true
+  debug_model: true
+  train_batch_size: 32
+  test_batch_size: 16
+  checkpoint_per_steps: 2000
+
+model:
+  max_length: 256
+  das_dimension: 1
+  objective: reconstruction
+  concept_detection: false
+
+dataset:
+  eval_path: null
+
+loss:
+  return_penalty: false
+
+wandb_config:
+  project: HyperReFT_Steering
+  run_name: gemma2b_hyperlsreft_steer

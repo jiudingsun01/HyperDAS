@@ -5,6 +5,7 @@ test_batch_size: 64
 lr: 1e-4
 test_per_steps: 100
 eval_per_steps: -1
+log_per_steps: 5
 checkpoint_per_steps: null
 max_test_steps: -1
 num_workers: 0

@@ -23,8 +23,7 @@ RUN python setup.py develop || true \
     && uv pip install --system --no-cache-dir --no-upgrade -e . || true \
     && uv pip install --system --no-cache-dir --no-upgrade ipdb
 
-COPY scripts/entrypoint.sh /usr/local/bin/ 
-COPY scripts/install.sh /usr/local/bin/
+COPY scripts/entrypoint.sh scripts/install.sh* /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Run install script if exists

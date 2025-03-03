@@ -2,12 +2,13 @@ defaults:
   - base
   - _self_ # Ensure dataset-specific configs override base
 
-train_path: "experiments/axbench/data/concept500_2b_l10"
-test_path: "experiments/axbench/data/concept10_2b_l10"
+train_path: "axbench/axbench/concept500/prod_2b_l10_v1/generate/train_data.parquet"
+# test_path: "axbench/axbench/concept10/prod_2b_l10_v1/generate/test_data.parquet"
 reconstruction_train_path: "assets/data/axbench/prod_2b_l10_concept500_lsreft/train"
-reconstruction_test_path: "assets/data/axbench/prod_2b_l10_concept10_lsreft/train"
+# reconstruction_test_path: "assets/data/axbench/prod_2b_l10_concept10_lsreft/train"
 # eval_path: "experiments/axbench/data/concept10_2b_l10"
-eval_path: "experiments/axbench/data/concept500_2b_l10"
+eval_path: "axbench/axbench/concept10/prod_2b_l10_v1/generate/test_data.parquet"
 dataset_type: axbench
 axbench_mode: train_steering
 split_by: concept
+train_ratio: 0.9

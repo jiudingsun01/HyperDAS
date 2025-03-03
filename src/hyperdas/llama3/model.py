@@ -938,7 +938,7 @@ class SteeringInterpretor(BaseInterpretor):
         )
 
         self.interpretor_config.target_hidden_size = config.model.target_hidden_size
-        self.interpretor_config.use_hypernetwork = config.model.use_hypernetwork
+        self.interpretor_config.use_lm_hypernetwork = config.model.use_lm_hypernetwork
         self.interpretor_config.top_k = config.model.top_k
         self.interpretor_config.reft_hypernetwork = config.model.reft_hypernetwork
         self.interpretor_config.reconstruction_loss_weight = (
@@ -995,6 +995,59 @@ class SteeringInterpretor(BaseInterpretor):
         self.interpretor.intervention_module.load_state_dict(
             torch.load(os.path.join(load_dir, "intervenable.pt"), weights_only=True)
         )
+
+    @torch.no_grad()
+    def get_logits(self, editor_input_ids, tokenizer, k=10):
+        """
+        Get top and bottom k logits for a concept.
+
+        Args:
+            editor_input_ids: Tensor containing tokenized concept text
+            tokenizer: Tokenizer for decoding token IDs
+            k: Number of top/bottom tokens to return
+
+        Returns:
+            top_logits: List of top k tokens and their values
+            neg_logits: List of bottom k tokens and their values
+        """
+        # Assert batch size is 1
+        assert editor_input_ids.shape[0] == 1, (
+            "get_logits only supports batch size of 1"
+        )
+        # Forward pass to get weight matrix
+        outputs = self.forward(
+            editor_input_ids=editor_input_ids,
+            return_intervened_states=True,
+        )
+        # Get weight matrix
+        weight_matrix = outputs.extra_outputs["weight_matrix"][:, 0, :, :].mean(0)
+        # Get embedding matrix
+        embedding_matrix = self.interpretor.target_model.get_input_embeddings().weight
+        # Apply normalization similar to the reference implementation
+        W_U = embedding_matrix.T
+        norm_weight = self.interpretor.target_model.model.norm.weight
+        W_U = W_U * (norm_weight + torch.ones_like(norm_weight))[:, None]
+        W_U -= einops.reduce(W_U, "d_model d_vocab -> 1 d_vocab", "mean")
+        # Compute logits
+        logits = torch.matmul(weight_matrix, W_U)
+        # Get top k logits
+        top_values, top_indices = torch.topk(logits, k)
+        # Get bottom k logits
+        neg_values, neg_indices = torch.topk(logits, k, largest=False)
+        # Convert to tokens
+        top_tokens = tokenizer.batch_decode(top_indices.T)
+        neg_tokens = tokenizer.batch_decode(neg_indices.T)
+        # Format results
+        top_logits = [
+            {"token": token, "value": val.item()}
+            for token, val in zip(top_tokens, top_values.squeeze())
+        ]
+        neg_logits = [
+            {"token": token, "value": val.item()}
+            for token, val in zip(neg_tokens, neg_values.squeeze())
+        ]
+
+        return top_logits, neg_logits
 
     def forward(
         self,
@@ -1195,82 +1248,6 @@ class SteeringInterpretor(BaseInterpretor):
         for key, value in loss_accumulators.items():
             metrics[key] = value / num_batches
 
-    @torch.no_grad()
-    def evaluate(self, eval_dataset: datasets.Dataset | None):
-        dataset_df = pd.DataFrame(eval_dataset)
-
-        concept_dfs = dataset_df[dataset_df["concept_id"] != -1].groupby("concept_id")
-        metrics = {}
-
-        for concept_id, concept_df in tqdm(concept_dfs, desc="concepts"):
-            all_max_act = []
-            # Load concept detection dataset
-            if (
-                self.config.model.concept_detection
-                and self.config.model.reft_hypernetwork == "LsReFT"
-            ):
-                batch_size = self.config.training.test_batch_size
-                # Process in batches
-                for i in range(0, len(concept_df), batch_size):
-                    raw_batch = concept_df.iloc[i : i + batch_size]
-                    raw_batch = list(map(lambda x: x._asdict(), raw_batch.itertuples()))
-                    # compute batch from raw batch
-                    batch = get_axbench_collate_fn(
-                        None,
-                        target_tokenizer=self.target_model_tokenizer,
-                        modes=["eval_concept"],
-                        intervention_layers=self.config.model.intervention_layer,
-                        intervention_positions=self.config.model.intervention_positions,
-                    )(raw_batch)
-                    # Move batch to GPU
-                    batch = {k: v.to(self.device) for k, v in batch.items()}
-
-                    outputs = self.forward(
-                        editor_input_ids=batch.get("editor_input_ids", None),
-                        target_input_ids=batch.get("target_input_ids", None),
-                        target_attention_mask=batch.get("target_attention_mask", None),
-                        target_position_ids=batch.get("target_position_ids", None),
-                        intervention_layers=batch.get("intervention_layers", None),
-                        intervention_positions=batch.get(
-                            "intervention_positions", None
-                        ),
-                        is_causal=batch.get("is_causal", None),
-                        return_intervened_states=True,
-                    )
-
-                    gathered_intervened_acts = outputs.gathered_intervened_states[0]
-
-                    # Compute detection scores (only one layer for now)
-                    # avg across batch because identical within a concept
-                    weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :].mean(0)
-
-                    detection_scores = torch.relu(
-                        einops.einsum(
-                            gathered_intervened_acts,
-                            weights.transpose(-1, -2),
-                            "b s h, h j -> b s",
-                        )
-                    )
-
-                    attn_mask = batch["target_attention_mask"]
-                    for seq_idx, act in enumerate(detection_scores):
-                        acts = act[attn_mask[seq_idx] > 0].float().cpu().numpy()
-                        acts = [round(x, 3) for x in acts]
-                        max_act = max(acts)
-                        all_max_act.append(max_act)
-            else:
-                return None
-
-            concept_df[f"{self.config.model.target_model_name_or_path}_max_act"] = (
-                all_max_act
-            )
-
-            evaluator = LatentStatsEvaluator(
-                self.config.model.target_model_name_or_path
-            )
-            eval_results = evaluator.compute_metrics(concept_df)
-            metrics[f"concept_{concept_id}"] = eval_results
-
         return metrics
 
     def run_train(
@@ -1466,7 +1443,7 @@ class SteeringInterpretor(BaseInterpretor):
 
                     if wandb.run:
                         wandb.log(metrics)
-                    if cur_steps % 5 == 0:
+                    if cur_steps % self.config.training.log_per_steps == 0:
                         output_metrics = {**metrics}
 
                         logger.info(output_metrics)

@@ -1,10 +1,14 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
 generate:
   lm_model: "gpt-4o-mini"
   output_length: 128
   num_of_examples: 144
   concept_path: "axbench/data/gemma-2-2b_10-gemmascope-res-16k.json"
   max_concepts: 500
-  master_data_dir: "axbench/data"
+  master_data_dir: "assets/data/axbench"
   dataset_category: "instruction"
   lm_use_cache: false
   seed: 42
@@ -35,8 +39,8 @@ inference:
   model_name: "google/gemma-2-2b-it"
   # latent related params
   output_length: 128
-  latent_num_of_examples: 36
-  latent_batch_size: 16
+  latent_num_of_examples: 144
+  latent_batch_size: 32
   # steering related params
   steering_intervention_type: "addition" # clamping
   steering_model_name: "google/gemma-2-2b-it"
@@ -62,7 +66,7 @@ inference:
       5.0,
     ] # number of steering factors per example
   # master data dir is shared across all jobs.
-  master_data_dir: "axbench/data"
+  master_data_dir: "assets/data/axbench"
   seed: 42
   lm_model: "gpt-4o-mini"
   # generation related params
@@ -78,4 +82,4 @@ evaluate:
   run_winrate: false
   winrate_baseline: "PromptSteering"
   # master data dir is shared across all jobs.
-  master_data_dir: "axbench/data"
+  master_data_dir: "assets/data/axbench"

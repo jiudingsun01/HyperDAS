@@ -125,7 +125,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     num_target_layers: int = None
     num_target_positions: int = None
     dropout: float = 0.05
-    use_hypernetwork: bool = True
+    use_lm_hypernetwork: bool = True
     top_k: int = 4
     reft_hypernetwork: Literal["LoReFT", "LsReFT"] = "LoReFT"
     objective: Literal["sft", "reconstruction", "sft+reconstruction"] = "sft"
@@ -523,7 +523,7 @@ class LlamaInterpretorForSteering(nn.Module):
         self.config.num_target_model_layers = target_model_cfg.num_hidden_layers
         self.config.target_hidden_size = target_model_cfg.hidden_size
 
-        if config.use_hypernetwork:
+        if config.use_lm_hypernetwork:
             self.hypernetwork = LlamaInterpretorHypernetwork(config)
         else:
             self.hypernetwork = None
@@ -537,7 +537,7 @@ class LlamaInterpretorForSteering(nn.Module):
         if config.reft_hypernetwork == "LoReFT":
             self.steering_hypernetwork = LoReFTHypernetwork(
                 hidden_size=config.hidden_size
-                if config.use_hypernetwork
+                if config.use_lm_hypernetwork
                 else config.target_hidden_size,
                 target_hidden_size=config.target_hidden_size,
                 num_target_layers=config.num_target_layers,
@@ -552,7 +552,7 @@ class LlamaInterpretorForSteering(nn.Module):
         elif config.reft_hypernetwork == "LsReFT":
             self.steering_hypernetwork = LsReFTHypernetwork(
                 hidden_size=config.hidden_size
-                if config.use_hypernetwork
+                if config.use_lm_hypernetwork
                 else config.target_hidden_size,
                 target_hidden_size=config.target_hidden_size,
                 num_target_layers=config.num_target_layers,
@@ -563,7 +563,7 @@ class LlamaInterpretorForSteering(nn.Module):
             )
         else:
             self.steering_hypernetwork = None
-        if config.use_hypernetwork:
+        if config.use_lm_hypernetwork:
             self.hypernetwork_adapter = nn.Linear(
                 config.target_hidden_size,
                 config.hidden_size,
@@ -647,10 +647,18 @@ class LlamaInterpretorForSteering(nn.Module):
         self._temp_global_cache = SimpleTensorCache()
 
     def train(self: T_Steer, mode: bool = True) -> T_Steer:
-        return self.hypernetwork.train(mode)
+        if self.hypernetwork is not None:
+            self.hypernetwork = self.hypernetwork.train(mode)
+        else:
+            self.steering_hypernetwork = self.steering_hypernetwork.train(mode)
+        return self
 
     def eval(self: T_Steer) -> T_Steer:
-        return self.hypernetwork.eval()
+        if self.hypernetwork is not None:
+            self.hypernetwork = self.hypernetwork.eval()
+        else:
+            self.steering_hypernetwork = self.steering_hypernetwork.eval()
+        return self
 
     def load_state_dict(
         self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
@@ -852,14 +860,14 @@ class LlamaInterpretorForSteering(nn.Module):
                 torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
             )
 
-        if target_position_ids is None and self.config.use_hypernetwork:
+        if target_position_ids is None and self.config.use_lm_hypernetwork:
             # -1 for all the padding tokens and start from 0 for the rest
             target_position_ids = (
                 torch.cumsum(target_attention_mask, dim=1) * target_attention_mask - 1
             )
 
         # Run target model for encoded hidden states
-        if base_hidden_states is None and self.config.use_hypernetwork:
+        if base_hidden_states is None and self.config.use_lm_hypernetwork:
             base_hidden_states = torch.stack(
                 self._run_target_model_for_encoded_hidden_states(
                     base_input_ids, base_attention_mask, base_position_ids
@@ -915,7 +923,7 @@ class LlamaInterpretorForSteering(nn.Module):
 
         # Project target states to compatibility with hypernet hidden size
         if (
-            self.config.use_hypernetwork
+            self.config.use_lm_hypernetwork
             and self.config.target_hidden_size != self.config.hidden_size
         ):
             collapsed_base_hidden_states = self.hypernetwork_adapter(
@@ -925,7 +933,7 @@ class LlamaInterpretorForSteering(nn.Module):
         layer_hidden_states = []
         if isinstance(intervention_layers, torch.Tensor):
             intervention_layer_list = intervention_layers.cpu().tolist()
-        if self.config.use_hypernetwork:
+        if self.config.use_lm_hypernetwork:
             for layer_idx in intervention_layer_list:
                 # Patch intervention layer each time
                 self.hypernetwork.lm_head.intervention_layer = layer_idx

@@ -8,7 +8,7 @@ target_model_name_or_path: "google/gemma-2-2b-it"
 intervention_layer: [10]
 intervention_positions: "f7+l7"
 
-use_hypernetwork: false
+use_lm_hypernetwork: false
 interpretor_type: "steering"
 concept_detection: true
 reft_hypernetwork: "LsReFT"

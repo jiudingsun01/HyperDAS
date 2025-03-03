@@ -9,7 +9,7 @@ generate:
   # concept_path: "<your local csv file path>"
   concept_path: "axbench/data/gemma-2-2b_20-gemmascope-res-16k.json"
   max_concepts: 10
-  master_data_dir: "axbench/data"
+  master_data_dir: "assets/data/axbench"
   seed: 42
 
 train:
@@ -32,6 +32,7 @@ train:
       coeff_l1_loss: 0.1
 
 inference:
+  ignore_state: false
   use_bf16: true
   models: ["HyperReFT", "PromptSteering"]
   model_name: "google/gemma-2-2b"
@@ -47,13 +48,14 @@ inference:
   steering_num_of_examples: 10 # number of examples per concept
   steering_factors: [0.0] # number of steering factors per example
   # master data dir is shared across all jobs.
-  master_data_dir: "experiments/axbench/data"
+  master_data_dir: "assets/data/axbench"
   data_dir: axbench/axbench/concept10/prod_2b_l10_v1/generate
-  dump_dir: assets/data/axbench/test_concept10
+  dump_dir: assets/data/axbench/inference
   seed: 42
   lm_model: "gpt-4o-mini"
   # generation related params
   temperature: 0.7
+  overwrite_inference_data_dir: null
 
 evaluate:
   models: ["HyperReFT", "PromptSteering"]
@@ -66,8 +68,8 @@ evaluate:
   run_winrate: true
   winrate_baseline: "PromptSteering"
   # master data dir is shared across all jobs.
-  master_data_dir: "experiments/axbench/data"
-  data_dir: assets/data/axbench/test_concept10/inference
-  dump_dir: assets/data/axbench/test_concept10
+  master_data_dir: "assets/data/axbench"
+  data_dir: assets/data/axbench/evaluate
+  dump_dir: assets/data/axbench/evaluate
   report_to: null
   wandb_name: null

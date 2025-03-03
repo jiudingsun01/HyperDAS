@@ -329,7 +329,7 @@ def tokenize_text_inputs(
 
         base_intervention_visibility_masks.append(base_visibility_mask)
 
-        if base_visibility_mask.sum(dim=-1) == 0:
+        if len(targets) > 0 and base_visibility_mask.sum(dim=-1) == 0:
             if base_visibility_mask.sum() == 0:
                 print("Base Text: ", input_texts[i])
                 print("Base Input: ", tokenized["input_ids"][i])

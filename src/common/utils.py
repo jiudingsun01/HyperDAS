@@ -24,16 +24,14 @@ def setup_tokenizer(model_name_or_path: str, max_length: int) -> AutoTokenizer:
 
 
 def load_wrapper(path, split="train"):
-    try:
-        if os.path.exists(path):
-            dataset = load_from_disk(path)
-        else:
-            dataset = load_dataset(path)
+    if path.endswith(".parquet"):
+        dataset = load_dataset("parquet", data_files=path)
+    elif os.path.exists(path):
+        dataset = load_from_disk(path)
+    else:
+        dataset = load_dataset(path)
 
-        # Extract train split if it exists
-        if isinstance(dataset, DatasetDict) and split in dataset:
-            return dataset[split]
-        return dataset
-
-    except Exception as e:
-        raise e
+    # Extract train split if it exists
+    if isinstance(dataset, DatasetDict) and split in dataset:
+        return dataset[split]
+    return dataset
