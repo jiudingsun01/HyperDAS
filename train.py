@@ -119,9 +119,12 @@ def run_experiment(
         train_reconstruction = load_axbench_reconstruction_data(
             config.dataset.reconstruction_train_path
         )
-        test_reconstruction = load_axbench_reconstruction_data(
-            config.dataset.reconstruction_test_path
-        )
+        if config.dataset.reconstruction_test_path:
+            test_reconstruction = load_axbench_reconstruction_data(
+                config.dataset.reconstruction_test_path
+            )
+        else:
+            test_reconstruction = None
         train_set, test_set = combine_concept_reconstruction_datasets(
             concept_train_dataset=load_wrapper(
                 config.dataset.train_path, split="train"

@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 from abc import ABC, abstractmethod
@@ -5,22 +6,21 @@ from math import ceil
 from typing import Dict, List, Optional
 
 import datasets
-import matplotlib.pyplot as plt
-import pandas as pd
 import einops
+import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
+import transformers
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import ModelOutput
 
-from axbench.evaluators.latent_stats import LatentStatsEvaluator
+import wandb
 from logger import get_logger
-from src.hyperdas.data.axbench import get_axbench_collate_fn, parse_positions_varlen
+from src.hyperdas.data.axbench import parse_positions_varlen
 
 from ..utils import (
     InterpretorModelOutput,
@@ -1248,6 +1248,9 @@ class SteeringInterpretor(BaseInterpretor):
         for key, value in loss_accumulators.items():
             metrics[key] = value / num_batches
 
+        torch.cuda.empty_cache()
+        gc.collect()
+
         return metrics
 
     def run_train(
@@ -1267,6 +1270,8 @@ class SteeringInterpretor(BaseInterpretor):
         lr = self.config.training.lr
         weight_decay = self.config.training.weight_decay
         max_grad_norm = self.config.training.max_grad_norm
+        warmup_ratio = self.config.training.warmup_ratio
+        scheduler_type = self.config.training.scheduler_type
 
         os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
         OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
@@ -1286,6 +1291,16 @@ class SteeringInterpretor(BaseInterpretor):
             epochs = ceil(total_steps / len(train_loader))
         cur_steps = 0
 
+        if scheduler_type:
+            self.lr_scheduler = transformers.get_scheduler(
+                name=scheduler_type,
+                optimizer=self.opt,
+                num_warmup_steps=total_steps * warmup_ratio,
+                num_training_steps=total_steps,
+            )
+        else:
+            self.lr_scheduler = None
+
         for epoch in range(epochs):
             # Create a tqdm progress bar
             with tqdm(
@@ -1302,7 +1317,7 @@ class SteeringInterpretor(BaseInterpretor):
                         logger.info("Training stopped. Reached max steps.")
                         break
                     if test_per_steps is not None:
-                        if cur_steps % test_per_steps == 0:
+                        if cur_steps > 0 and cur_steps % test_per_steps == 0:
                             metrics = {}
                             for loader in test_loader:
                                 metrics[loader.name] = self.predict(loader)
@@ -1318,7 +1333,11 @@ class SteeringInterpretor(BaseInterpretor):
                                 )
                                 with open(metrics_path, "w") as f:
                                     json.dump(metrics, f, indent=2)
-                        if eval_dataset and cur_steps % eval_per_steps == 0:
+                        if (
+                            eval_dataset
+                            and cur_steps > 0
+                            and cur_steps % eval_per_steps == 0
+                        ):
                             metrics = self.evaluate(eval_dataset)
                             if save_dir is not None:
                                 metrics_path = os.path.join(
@@ -1334,7 +1353,8 @@ class SteeringInterpretor(BaseInterpretor):
 
                     if checkpoint_per_steps is not None:
                         if (
-                            cur_steps % checkpoint_per_steps == 0
+                            cur_steps > 0
+                            and cur_steps % checkpoint_per_steps == 0
                             and save_dir is not None
                             and save_model
                         ):
@@ -1426,6 +1446,8 @@ class SteeringInterpretor(BaseInterpretor):
                         )
 
                     self.opt.step()
+                    if self.lr_scheduler is not None:
+                        self.lr_scheduler.step()
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
                     self.opt.zero_grad()

@@ -11,7 +11,10 @@ import torch
 from axbench.scripts.evaluate import load_jsonl
 
 
-def split_axbench_train_test(axbench_train_set, split_by="concept", train_ratio=0.8):
+def split_axbench_train_test(
+    axbench_train_set, split_by="concept", train_ratio=0.8, seed=42
+):
+    random.seed(seed)
     axbench_train_set = [d for d in axbench_train_set if d["category"] == "positive"]
 
     if split_by == "concept":
@@ -161,16 +164,9 @@ def load_axbench_reconstruction_data(
     reconstruction_data_path: str,
 ):
     lsreft_path = f"{reconstruction_data_path}/LsReFT_weight.pt"
-    rank0_lsreft_path = f"{reconstruction_data_path}/rank_0_LsReFT_weight.pt"
-    lsreft = torch.load(
-        lsreft_path if os.path.exists(lsreft_path) else rank0_lsreft_path
-    )
-
+    lsreft = torch.load(lsreft_path)
     metadata_path = f"{reconstruction_data_path}/metadata.jsonl"
-    rank0_metadata_path = f"{reconstruction_data_path}/rank_0_metadata.jsonl"
-    lsreft_metadata = load_jsonl(
-        metadata_path if os.path.exists(metadata_path) else rank0_metadata_path
-    )
+    lsreft_metadata = load_jsonl(metadata_path)
 
     assert lsreft.shape[0] == len(lsreft_metadata), "Length mismatch"
 
@@ -223,8 +219,8 @@ def combine_concept_reconstruction_datasets(
         )
 
     if concept_test_dataset is None:
-        concept_train_dataset, concept_test_dataset = split_axbench_train_test(
-            train_set=concept_train_dataset,
+        concept_train_dataset, concept_test_dataset = split_axbench_train_test_fast(
+            concept_train_dataset,
             split_by=split_by,
             train_ratio=train_ratio,
             seed=seed,
@@ -388,56 +384,80 @@ def get_axbench_collate_fn(
     intervention_positions=None,
     objective="sft",
 ):
-    def sft_collate_fn(batch):
+    def process_batch_inputs(batch, flags=None):
+        """Helper function to process inputs with shared flags across collate functions.
+
+        Args:
+            batch: List of batch items containing input data
+            flags: Optional dict tracking which items have been processed
+                {"input_added": [bool], "edit_instruction_added": [bool]}
+
+        Returns:
+            inputs: List of input texts
+            edit_instructions: List of edit instruction texts
+            targets: List of target texts (currently empty)
+            flags: Updated processing flags
+        """
         inputs, edit_instructions, targets = [], [], []
+        if flags is None:
+            flags = {
+                "input_added": [False] * len(batch),
+                "edit_instruction_added": [False] * len(batch),
+            }
 
-        for b in batch:
-            input_added = False
-            edit_instruction_added = False
-
+        for i, b in enumerate(batch):
             if AxbenchMode.TRAIN_CONCEPT in modes:
-                if not input_added:
+                if not flags["input_added"][i] and "input" in b:
                     inputs.append(b["input"])
-                    input_added = True
-                if not edit_instruction_added:
-                    edit_instructions.append(b["output_concept"])
-                    edit_instruction_added = True
+                    flags["input_added"][i] = True
+                if not flags["edit_instruction_added"][i]:
+                    if "concept" in b:
+                        edit_instructions.append(b["concept"])
+                    elif "output_concept" in b:
+                        edit_instructions.append(b["output_concept"])
+                    flags["edit_instruction_added"][i] = True
 
             if AxbenchMode.EVAL_CONCEPT in modes:
-                if not input_added:
+                if not flags["input_added"][i]:
                     inputs.append(b["input"])
-                    input_added = True
-                if not edit_instruction_added:
-                    edit_instructions.append(
-                        b["input_concept"]
-                        if "input_concept" in b
-                        else b["output_concept"]
-                    )
-                    edit_instruction_added = True
+                    flags["input_added"][i] = True
+                if not flags["edit_instruction_added"][i]:
+                    edit_instructions.append(b["input_concept"])
+                    flags["edit_instruction_added"][i] = True
 
             if AxbenchMode.PROMPT_STEERING in modes:
-                if not input_added:
+                if not flags["input_added"][i]:
                     inputs.append(b["steered_input"])
-                    input_added = True
-                if not edit_instruction_added:
+                    flags["input_added"][i] = True
+                if not flags["edit_instruction_added"][i]:
                     edit_instructions.append(b["input_concept"])
-                    edit_instruction_added = True
+                    flags["edit_instruction_added"][i] = True
 
             if AxbenchMode.TRAIN_STEERING in modes:
-                if not input_added:
+                if not flags["input_added"][i] and "input" in b:
                     inputs.append(b["input"])
-                    input_added = True
-                if not edit_instruction_added:
-                    edit_instructions.append(b["output_concept"])
-                    edit_instruction_added = True
+                    flags["input_added"][i] = True
+                if not flags["edit_instruction_added"][i]:
+                    if "concept" in b:
+                        edit_instructions.append(b["concept"])
+                    elif "output_concept" in b:
+                        edit_instructions.append(b["output_concept"])
+                    flags["edit_instruction_added"][i] = True
 
             if AxbenchMode.EVAL_STEERING in modes:
-                if not input_added:
+                if not flags["input_added"][i]:
                     inputs.append(b["input"])
-                    input_added = True
-                if not edit_instruction_added:
+                    flags["input_added"][i] = True
+                if not flags["edit_instruction_added"][i]:
                     edit_instructions.append(b["input_concept"])
-                    edit_instruction_added = True
+                    flags["edit_instruction_added"][i] = True
+
+        return inputs, edit_instructions, targets, flags
+
+    def sft_collate_fn(batch, shared_flags=None):
+        inputs, edit_instructions, targets, flags = process_batch_inputs(
+            batch, shared_flags
+        )
 
         is_causal = torch.tensor([1 for _ in batch])
         returned_dict = {
@@ -492,64 +512,44 @@ def get_axbench_collate_fn(
             returned_dict["intervention_layers"] = intervention_l
             returned_dict["intervention_positions"] = intervention_pos
 
-        return returned_dict
+        return returned_dict, flags
 
-    def reconstruction_collate_fn(batch):
-        edit_instructions, reconstruction_targets = [], []
-        for b in batch:
-            edit_instruction_added = False
+    def reconstruction_collate_fn(batch, shared_flags=None):
+        _, edit_instructions, _, flags = process_batch_inputs(batch, shared_flags)
+        reconstruction_targets = []
 
+        for i, b in enumerate(batch):
             if (
                 AxbenchMode.TRAIN_CONCEPT in modes
                 or AxbenchMode.TRAIN_STEERING in modes
-            ):
-                if not edit_instruction_added:
-                    edit_instructions.append(b["concept"])
-                    edit_instruction_added = True
+            ) and "reconstruction" in objective:
+                reconstruction_targets.append(torch.tensor(b["subspace"]))
 
-                if "reconstruction" in objective:
-                    # We only have subspace labels for training,
-                    # inference is done as steering with the generated subspaces
-                    reconstruction_targets.append(torch.tensor(b["subspace"]))
-
-            if AxbenchMode.EVAL_CONCEPT in modes:
-                if not edit_instruction_added:
-                    edit_instructions.append(b["concept"])
-                    edit_instruction_added = True
-
-            if AxbenchMode.EVAL_STEERING in modes:
-                if not edit_instruction_added:
-                    edit_instructions.append(b["input_concept"])
-                    edit_instruction_added = True
-
-        returned_dict = {
-            "editor_input_ids": target_tokenizer(
+        returned_dict = {}
+        if edit_instructions:
+            returned_dict["editor_input_ids"] = target_tokenizer(
                 edit_instructions,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-            )["input_ids"],
-        }
+            )["input_ids"]
 
         if reconstruction_targets:
             returned_dict["reconstruction_targets"] = torch.stack(
                 reconstruction_targets
             )
 
-        return returned_dict
+        return returned_dict, flags
 
     if objective == "sft":
-        collate_fn = sft_collate_fn
+        return lambda batch: sft_collate_fn(batch)[0]
     elif objective == "reconstruction":
-        collate_fn = reconstruction_collate_fn
+        return lambda batch: reconstruction_collate_fn(batch)[0]
     elif objective == "sft+reconstruction":
-        # Merge collate function output dicts using a custom lambda
+
         def merged_collate_fn(batch):
-            return {
-                **sft_collate_fn(batch),
-                **reconstruction_collate_fn(batch),
-            }
+            sft_dict, flags = sft_collate_fn(batch)
+            reconstruction_dict, _ = reconstruction_collate_fn(batch, flags)
+            return {**sft_dict, **reconstruction_dict}
 
-        collate_fn = merged_collate_fn
-
-    return collate_fn
+        return merged_collate_fn

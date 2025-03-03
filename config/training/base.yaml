@@ -2,7 +2,11 @@ n_epochs: 5
 n_steps: -1
 train_batch_size: 16
 test_batch_size: 64
+
 lr: 1e-4
+warmup_ratio: 0.1
+scheduler_type: null
+
 test_per_steps: 100
 eval_per_steps: -1
 log_per_steps: 5
