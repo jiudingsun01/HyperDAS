@@ -15,10 +15,8 @@ import einops
 import httpx
 import hydra
 import pandas as pd
-from ray import is_initialized
 import torch
 import torch.distributed as dist
-import wandb
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd, to_absolute_path
@@ -26,6 +24,7 @@ from omegaconf import DictConfig, OmegaConf
 from openai import AsyncOpenAI
 from tqdm import tqdm
 
+import wandb
 from axbench.models.sae import load_metadata_flatten
 from axbench.scripts.evaluate import eval_latent, eval_steering
 from axbench.scripts.inference import (
@@ -84,26 +83,8 @@ def _prepare_config_for_cache(config_dict):
     return processed_dict
 
 
-def get_steering_cache_key(config, concept_ids, metadata):
+def get_cache_key(config, concept_ids, metadata):
     """Create a hash key based on relevant inputs that would affect the steering data."""
-    # Convert OmegaConf to dict and process for caching
-    config_dict = OmegaConf.to_container(config.axbench.inference, resolve=True)
-    processed_config = _prepare_config_for_cache(config_dict)
-
-    cache_key_dict = {
-        "config": processed_config,
-        "concept_ids": sorted(concept_ids),  # Sort for consistency
-        "metadata_hash": hashlib.sha256(
-            json.dumps(metadata, sort_keys=True).encode()
-        ).hexdigest(),
-    }
-    return hashlib.sha256(
-        json.dumps(cache_key_dict, sort_keys=True).encode()
-    ).hexdigest()
-
-
-def get_latent_cache_key(config, concept_ids, metadata):
-    """Generate a cache key for latent data based on config and concept IDs."""
     # Convert OmegaConf to dict and process for caching
     config_dict = OmegaConf.to_container(config.axbench.inference, resolve=True)
     processed_config = _prepare_config_for_cache(config_dict)
@@ -447,7 +428,7 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Prepare data per concept
     logger.debug("Preparing data per concept")
-    cache_key = get_steering_cache_key(config, my_concept_ids, metadata)
+    cache_key = get_cache_key(config, my_concept_ids, metadata)
     cache_file = os.path.join(dump_dir, f"steering_data_cache_{cache_key}.parquet")
 
     # Try to load from cache first
@@ -599,9 +580,9 @@ def infer_steering(config, rank, world_size, device, logger):
 
 
 def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
-    assert cfg.training.load_trained_from is not None, (
-        "Please specify a checkpoint to load from"
-    )
+    assert (
+        cfg.training.load_trained_from is not None
+    ), "Please specify a checkpoint to load from"
     cfg.axbench.inference.dump_dir = cfg.training.load_trained_from
 
     if cfg.axbench.type == "steering":
@@ -742,7 +723,7 @@ def infer_latent(
     atexit.register(dataset_factory.save_cache)
     atexit.register(dataset_factory.reset_stats)
 
-    cache_key = get_latent_cache_key(config, my_concept_ids, metadata)
+    cache_key = get_cache_key(config, my_concept_ids, metadata)
     cache_file = os.path.join(dump_dir, f"latent_data_cache_{cache_key}.parquet")
 
     # Try to load from cache first
@@ -1009,7 +990,7 @@ def infer_latent_imbalance(
     )
 
     # Save results to disk
-    with open(imbalance_dump_dir / f"HyperReFT_latent_results.pkl", "wb") as f:
+    with open(imbalance_dump_dir / "HyperReFT_latent_results.pkl", "wb") as f:
         pickle.dump(results, f)
 
     logger.warning(
@@ -1075,9 +1056,9 @@ def find_run_by_name(run_name, entity, project):
 def run_eval(cfg: DictConfig):
     args = cfg.axbench.evaluate
 
-    assert cfg.training.load_trained_from is not None, (
-        "Please specify a checkpoint to load from"
-    )
+    assert (
+        cfg.training.load_trained_from is not None
+    ), "Please specify a checkpoint to load from"
 
     checkpoint_path = Path(cfg.training.load_trained_from)
     # load config from checkpoint

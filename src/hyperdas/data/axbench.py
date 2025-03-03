@@ -492,7 +492,7 @@ def get_axbench_collate_fn(
                     inputs.append(b["input"])
                     flags["input_added"][i] = True
                 if not flags["edit_instruction_added"][i]:
-                    edit_instructions.append(b["input_concept"])
+                    edit_instructions.append(b["output_concept"])
                     flags["edit_instruction_added"][i] = True
 
             if AxbenchMode.PROMPT_STEERING in modes:

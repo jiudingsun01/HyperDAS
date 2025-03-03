@@ -58,6 +58,7 @@ inference:
   overwrite_inference_data_dir: null
 
 evaluate:
+  ignore_state: false
   models: ["HyperReFT", "PromptSteering"]
   latent_evaluators: ["AUCROCEvaluator", "HardNegativeEvaluator"]
   steering_evaluators: ["PerplexityEvaluator", "LMJudgeEvaluator"]
