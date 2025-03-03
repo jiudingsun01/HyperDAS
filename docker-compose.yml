@@ -6,7 +6,7 @@ services:
     env_file: .env
     build:
       context: .
-      dockerfile: ${DOCKERFILE}  # Defaults to Dockerfile if not set
+      dockerfile: Dockerfile
       args:
         - PYTHON_VERSION=${PYTHON_VERSION}
         - GIT_EMAIL=${GIT_EMAIL}
@@ -18,8 +18,7 @@ services:
       - ./assets:/workspace/${PROJECT_NAME}/assets
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
       - ./.vscode-server:/.vscode-server
-      - ${HOME}/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
-      # Add explicit device mounts for better GPU stability
+      - ${HOME}/.ssh:/root/.ssh
       - /dev/nvidia-uvm:/dev/nvidia-uvm
       - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
       - /dev/nvidia-modeset:/dev/nvidia-modeset
