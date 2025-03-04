@@ -51,6 +51,16 @@ pip list
 # Print working directory information
 echo "📂 Current working directory: $(pwd)"
 
+echo "🔑 Setting up SSH keys..."
+# Start SSH agent and load all keys
+eval $(ssh-agent -s)
+for key in /root/.ssh/*; do
+    # Skip public keys
+    if [[ $key != *.pub ]]; then
+        ssh-add "$key" 2>/dev/null
+    fi
+done
+
 # Move git config setup to beginning before any other operations
 echo "🔧 Setting up git configuration..."
 
