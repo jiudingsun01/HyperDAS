@@ -313,6 +313,7 @@ def infer_steering(config, rank, world_size, device, logger):
 
     data_dir = Path(config.axbench.inference.data_dir)
     dump_dir = Path(config.training.load_trained_from or "assets/aux")
+    cache_dir = Path(config.axbench.cache_dir or "assets/data/axbench/cache")
 
     num_of_examples = config.axbench.inference.steering_num_of_examples
     metadata = load_metadata_flatten(data_dir / METADATA_FILE)
@@ -412,7 +413,7 @@ def infer_steering(config, rank, world_size, device, logger):
     # Prepare data per concept
     logger.debug("Preparing data per concept")
     cache_key = get_cache_key(config, my_concept_ids, metadata)
-    cache_file = os.path.join(dump_dir, f"steering_data_cache_{cache_key}.parquet")
+    cache_file = os.path.join(cache_dir, f"steering_data_cache_{cache_key}.parquet")
 
     # Try to load from cache first
     if os.path.exists(cache_file):
@@ -575,7 +576,7 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
     assert (
         cfg.training.load_trained_from is not None
     ), "Please specify a checkpoint to load from"
-    cfg.axbench.inference.dump_dir = cfg.training.load_trained_from
+    cfg.axbench.inference.dump_dir = cfg.axbench.dump_dir
 
     if cfg.axbench.type == "steering":
         infer_steering(
@@ -619,6 +620,7 @@ def infer_latent(
 ):
     data_dir = Path(config.axbench.inference.data_dir)
     dump_dir = Path(config.training.load_trained_from or "assets/aux")
+    cache_dir = Path(config.axbench.cache_dir or "assets/data/axbench/cache")
 
     num_of_examples = config.axbench.inference.steering_num_of_examples
     metadata = load_metadata_flatten(data_dir / METADATA_FILE)
@@ -716,7 +718,7 @@ def infer_latent(
     atexit.register(dataset_factory.reset_stats)
 
     cache_key = get_cache_key(config, my_concept_ids, metadata)
-    cache_file = os.path.join(dump_dir, f"latent_data_cache_{cache_key}.parquet")
+    cache_file = os.path.join(cache_dir, f"latent_data_cache_{cache_key}.parquet")
 
     # Try to load from cache first
     if os.path.exists(cache_file):
