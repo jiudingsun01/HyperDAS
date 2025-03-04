@@ -1,6 +1,5 @@
 import os
 import random
-from enum import Enum
 from typing import List
 
 import datasets
@@ -10,6 +9,7 @@ import torch
 
 from axbench.scripts.evaluate import load_jsonl
 from logger import get_logger
+from src.hyperdas.utils import AxbenchMode
 
 logger = get_logger(__name__)
 
@@ -436,14 +436,6 @@ def parse_positions_varlen(positions: str, seq_len: int):
     elif "l" in positions:
         return np.arange(seq_len - int(positions.strip("l")), seq_len).tolist()
     return []
-
-
-class AxbenchMode(str, Enum):
-    TRAIN_STEERING = "train_steering"
-    EVAL_STEERING = "eval_steering"
-    PROMPT_STEERING = "prompt_steering"
-    TRAIN_CONCEPT = "train_concept"
-    EVAL_CONCEPT = "eval_concept"
 
 
 def get_axbench_collate_fn(

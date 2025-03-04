@@ -529,9 +529,9 @@ class LlamaInterpretorForSteering(nn.Module):
             self.hypernetwork = None
 
         if config.reft_hypernetwork == "LsReFT":
-            assert len(config.intervention_layer_list) == 1, (
-                "LsReFT only supports 1 layer"
-            )
+            assert (
+                len(config.intervention_layer_list) == 1
+            ), "LsReFT only supports 1 layer"
 
         logger.debug("Initializing ReFT hypernetwork")
         if config.reft_hypernetwork == "LoReFT":
@@ -721,7 +721,7 @@ class LlamaInterpretorForSteering(nn.Module):
             # Only apply intervention during prefill phase
             if (
                 self._temp_global_cache["prompt_lengths"][0]
-                == target_kwargs.get("past_key_value")._seen_tokens
+                == target_kwargs.get("past_key_value").seen_tokens
             ):
                 hidden_states = output[0]
                 kwargs["generation"] = True

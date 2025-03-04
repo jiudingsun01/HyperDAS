@@ -7,7 +7,6 @@ import json
 import os
 import pickle
 import random
-from enum import Enum
 from pathlib import Path
 from typing import Dict, List
 
@@ -46,22 +45,9 @@ from src.hyperdas.data.axbench import get_axbench_collate_fn
 from src.hyperdas.llama3.model import (
     SteeringInterpretor,
 )
-from src.hyperdas.utils import calculate_perplexity
+from src.hyperdas.utils import AxbenchMode, calculate_perplexity
 
 logger = get_logger(__name__)
-
-
-class InferenceModes(str, Enum):
-    PROMPT_STEERING = "PromptSteering"
-    HYPERREFT = "HyperReFT"
-
-    def __str__(self):
-        return self.value
-
-    def __eq__(self, other):
-        if isinstance(other, str):
-            return self.value == other
-        return super().__eq__(other)
 
 
 def _prepare_config_for_cache(config_dict):
@@ -108,7 +94,7 @@ def predict_steering(
     hypernet_tokenizer,
     concept_df: pd.DataFrame,
     device: str,
-    mode: InferenceModes,
+    mode: AxbenchMode,
     reconstruction_data=None,
     batch_size: int = 16,
     eval_output_length: int = 100,
@@ -147,7 +133,7 @@ def predict_steering(
         batch = get_axbench_collate_fn(
             hypernet_tokenizer,
             target_model_tokenizer,
-            modes="eval" if mode == InferenceModes.HYPERREFT else "prompt",
+            modes=mode,
             intervention_layers=intervention_layers,
             intervention_positions=intervention_positions,
         )(converted_batch)
@@ -156,7 +142,7 @@ def predict_steering(
         batch = {k: v.to(device) for k, v in batch.items()}
 
         # Generate outputs based on mode
-        if mode == InferenceModes.HYPERREFT:
+        if mode == AxbenchMode.EVAL_STEERING:
             outputs = model.generate(
                 editor_input_ids=batch["editor_input_ids"],
                 base_input_ids=batch.get("base_input_ids"),
@@ -172,7 +158,7 @@ def predict_steering(
                 temperature=temperature,
                 do_intervention=True,
             )
-        elif mode == InferenceModes.PROMPT_STEERING:
+        elif mode == AxbenchMode.PROMPT_STEERING:
             outputs = model.generate(
                 target_input_ids=batch.get("target_input_ids"),
                 target_attention_mask=batch.get("target_attention_mask"),
@@ -212,8 +198,8 @@ def predict_steering(
     gc.collect()
 
     return {
-        f"{mode}_steered_generation": all_generations,
-        f"{mode}_perplexity": all_perplexities,
+        "steered_generation": all_generations,
+        "perplexity": all_perplexities,
     }
 
 
@@ -392,8 +378,7 @@ def infer_steering(config, rank, world_size, device, logger):
     else:
         hypernet_tokenizer = None
 
-    if "PromptSteering" in config.axbench.evaluate.models:
-        has_prompt_steering = True
+    has_prompt_steering = "PromptSteering" in config.axbench.evaluate.models
 
     logger.debug("Initializing dataset factory")
     dataset_factory = SteeringDatasetFactory(
@@ -404,8 +389,6 @@ def infer_steering(config, rank, world_size, device, logger):
         lm_model=config.axbench.inference.lm_model,
         has_prompt_steering=has_prompt_steering,
     )
-    atexit.register(dataset_factory.save_cache)
-    atexit.register(dataset_factory.reset_stats)
 
     is_chat_model = (
         True if config.axbench.inference.model_name in CHAT_MODELS else False
@@ -460,7 +443,7 @@ def infer_steering(config, rank, world_size, device, logger):
                 num_of_examples,
                 steering_factors,
                 steering_datasets,
-                None,
+                config.axbench.inference,
             )
             # Add sae info to DataFrame for caching
             current_df["sae_link"] = sae_link
@@ -479,6 +462,15 @@ def infer_steering(config, rank, world_size, device, logger):
             pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
             logger.info(f"Cached steering data to {cache_file}")
 
+    axbench_mode_map = {
+        model_name: (
+            AxbenchMode.PROMPT_STEERING
+            if model_name == "PromptSteering"
+            else AxbenchMode.EVAL_STEERING
+        )
+        for model_name in config.axbench.inference.models
+    }
+
     # Now loop over concept_ids and use preloaded models
     for concept_id in my_concept_ids:
         logger.info(f"Processing concept {concept_id}")
@@ -493,7 +485,7 @@ def infer_steering(config, rank, world_size, device, logger):
                 current_df,
                 device,
                 concept_id=concept_id,
-                mode=model_name,
+                mode=axbench_mode_map[model_name],
                 batch_size=config.axbench.inference.steering_batch_size,
                 eval_output_length=config.axbench.inference.steering_output_length,
                 temperature=config.axbench.inference.temperature,
@@ -503,7 +495,7 @@ def infer_steering(config, rank, world_size, device, logger):
             )
             # Store the results in current_df
             for k, v in results.items():
-                current_df[k] = v
+                current_df[f"{model_name}_{k}"] = v
 
         save(dump_dir, "steering", current_df, rank)
         logger.warning(
@@ -1109,6 +1101,7 @@ def run_eval(cfg: DictConfig):
             )
 
     if cfg.axbench.type == "steering":
+        args.mode = "steering"
         eval_steering(args)
     elif cfg.axbench.type == "latent":
         eval_latent(args)

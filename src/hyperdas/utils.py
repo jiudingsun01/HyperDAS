@@ -1,19 +1,26 @@
 from __future__ import annotations
 
-from ast import Tuple
-from asyncio import gather
 import contextlib
+from ast import Tuple
 from collections import namedtuple
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from numpy import isin
 import torch
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 
 NamedDataLoader = namedtuple("NamedDataLoader", ["name", "raw", "data_loader"])
+
+
+class AxbenchMode(str, Enum):
+    TRAIN_STEERING = "train_steering"
+    EVAL_STEERING = "eval_steering"
+    PROMPT_STEERING = "prompt_steering"
+    TRAIN_CONCEPT = "train_concept"
+    EVAL_CONCEPT = "eval_concept"
 
 
 class SimpleTensorCache:

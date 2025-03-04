@@ -152,7 +152,7 @@ class LsReFTHypernetwork(nn.Module):
         weight_sharing: bool = False,
     ) -> None:
         """
-        ReFT Hypernetwork that generates weight and rotation matrices for target model intervention.
+        ReFT Hypernetwork that generates weight matrices for target model intervention.
 
         Args:
             hidden_size: Hidden dimension size of the source model

@@ -74,3 +74,4 @@ evaluate:
   dump_dir: assets/data/axbench/evaluate
   report_to: null
   wandb_name: null
+  mode: steering # or latent
