@@ -52,7 +52,7 @@ inference:
   master_data_dir: "assets/data/axbench"
   data_dir: axbench/axbench/concept10/prod_2b_l10_v1/generate
   dump_dir: assets/data/axbench/inference
-  reconstruction_data_dir: null
+  reconstruction_data_path: null
   seed: 42
   lm_model: "gpt-4o-mini"
   # generation related params

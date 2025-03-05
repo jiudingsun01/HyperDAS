@@ -72,9 +72,21 @@ def _prepare_config_for_cache(config_dict):
 
 def get_cache_key(config, concept_ids, metadata):
     """Create a hash key based on relevant inputs that would affect the steering data."""
-    # Convert OmegaConf to dict and process for caching
+    # Extract only the relevant keys from the inference config
+    relevant_keys = [
+        "input_length",
+        "latent_num_of_examples",
+        "latent_batch_size",
+        "steering_output_length",
+        "steering_num_of_examples",
+        "steering_factors",
+        "steering_datasets",
+        "seed",
+    ]
+
+    # Convert OmegaConf to dict and extract only relevant keys
     config_dict = OmegaConf.to_container(config.axbench.inference, resolve=True)
-    processed_config = _prepare_config_for_cache(config_dict)
+    processed_config = {k: config_dict[k] for k in relevant_keys if k in config_dict}
 
     cache_key_dict = {
         "config": processed_config,
@@ -361,6 +373,18 @@ def infer_steering(config, rank, world_size, device, logger):
     concept_ids_per_rank = partition_concept_ids(concept_ids, world_size)
     my_concept_ids = concept_ids_per_rank[rank]
 
+    # Load reconstruction data
+    if config.axbench.inference.reconstruction_data_path is not None:
+        reconstruction_data = torch.load(
+            config.axbench.inference.reconstruction_data_path,
+            map_location="cpu",
+            mmap=True,
+        )
+        # Map from concept_id -> subspace
+        reconstruction_data = {idx: reconstruction_data[idx] for idx in my_concept_ids}
+    else:
+        reconstruction_data = None
+
     if last_concept_id_processed is not None:
         if last_concept_id_processed in my_concept_ids:
             idx = my_concept_ids.index(last_concept_id_processed)
@@ -439,7 +463,7 @@ def infer_steering(config, rank, world_size, device, logger):
 
     # Try to load from cache first
     if os.path.exists(cache_file):
-        logger.info("Loading steering data from cache")
+        logger.info(f"Loading steering data from cache {cache_file}")
         cached_df = pd.read_parquet(cache_file)
         data_per_concept = {}
         # Reconstruct the data_per_concept dictionary from the cached DataFrame
@@ -494,38 +518,40 @@ def infer_steering(config, rank, world_size, device, logger):
         for model_name in config.axbench.inference.models
     }
 
-    # Now loop over concept_ids and use preloaded models
-    for concept_id in my_concept_ids:
-        logger.info(f"Processing concept {concept_id}")
-        current_df, sae_link, sae_id = data_per_concept[concept_id]
-        for model_name in config.axbench.inference.models:
-            logger.debug(f"Running prediction for {model_name} mode")
-            # Run prediction
-            results = predict_steering(
-                model_instance,
-                tokenizer,
-                hypernet_tokenizer,
-                current_df,
-                device,
-                concept_id=concept_id,
-                mode=axbench_mode_map[model_name],
-                batch_size=config.axbench.inference.steering_batch_size,
-                eval_output_length=config.axbench.inference.steering_output_length,
-                temperature=config.axbench.inference.temperature,
-                prefix_length=prefix_length,
-                intervention_positions=config.model.intervention_positions,
-                intervention_layers=config.model.intervention_layer,
-            )
-            # Store the results in current_df
-            for k, v in results.items():
-                current_df[f"{model_name}_{k}"] = v
+    # Process all concepts in batches across concept boundaries
+    for model_name in config.axbench.inference.models:
+        logger.info(f"Running prediction for {model_name} mode")
 
-        save(dump_dir, "steering", current_df, rank)
-        logger.warning(
-            f"Saved inference results for concept {concept_id} to rank_{rank}_steering_data.parquet"
+        # Run prediction on all data at once
+        results = predict_steering(
+            model_instance,
+            tokenizer,
+            hypernet_tokenizer,
+            cached_df,
+            device,
+            reconstruction_data=reconstruction_data,
+            mode=axbench_mode_map[model_name],
+            batch_size=config.axbench.inference.steering_batch_size,
+            eval_output_length=config.axbench.inference.steering_output_length,
+            temperature=config.axbench.inference.temperature,
+            prefix_length=prefix_length,
+            intervention_positions=config.model.intervention_positions,
+            intervention_layers=config.model.intervention_layer,
         )
-        # After processing, save state
-        current_state = {"last_concept_id": concept_id}
+
+        # Store the results in cached_df
+        for k, v in results.items():
+            cached_df[f"{model_name}_{k}"] = v
+
+    # Save all results at once
+    save(dump_dir, "steering", cached_df, rank)
+    logger.warning(
+        f"Saved inference results for all concepts to rank_{rank}_steering_data.parquet"
+    )
+
+    # After processing, save state with the last concept_id
+    if my_concept_ids:
+        current_state = {"last_concept_id": my_concept_ids[-1]}
         save_state(dump_dir, current_state, "generate", rank)
 
     logger.info(f"Rank {rank} completed all concepts, cleaning up")
@@ -780,41 +806,38 @@ def infer_latent(
             pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
             logger.info(f"Cached latent data to {cache_file}")
 
-    for concept_id in my_concept_ids:
-        logger.info(f"Processing concept {concept_id}")
-        current_df = data_per_concept[concept_id].copy()
-
-        # NOTE: we only support one model for now (WIP)
-        for model_name in config.axbench.inference.models:
-            results = predict_latent(
-                model=model_instance,
-                target_model_tokenizer=tokenizer,
-                hypernet_tokenizer=hypernet_tokenizer,
-                concept_df=current_df,
-                device=device,
-                model_name=model_name,
-                batch_size=config.axbench.inference.latent_batch_size,
-                intervention_positions=config.model.intervention_positions,
-                intervention_layers=config.model.intervention_layer,
-            )
-
-            # Store the results in current_df
-            for k, v in results.items():
-                if k == "tokens":
-                    if "tokens" not in current_df:
-                        current_df.loc[:, "tokens"] = v  # for tokens, they are global
-                    else:
-                        continue
-                else:
-                    current_df.loc[:, f"{model_name}_{k}"] = v
-
-        save(dump_dir, "latent", current_df, rank)
-        logger.warning(
-            f"Saved inference results for concept {concept_id} to rank_{rank}_latent_data.parquet"
+    # Process all concepts in one go
+    # NOTE: we only support one model for now (WIP)
+    for model_name in config.axbench.inference.models:
+        results = predict_latent(
+            model=model_instance,
+            target_model_tokenizer=tokenizer,
+            hypernet_tokenizer=hypernet_tokenizer,
+            concept_df=cached_df,
+            device=device,
+            model_name=model_name,
+            batch_size=config.axbench.inference.latent_batch_size,
+            intervention_positions=config.model.intervention_positions,
+            intervention_layers=config.model.intervention_layer,
         )
-        # After processing, save state
-        current_state = {"last_concept_id": concept_id}
-        save_state(dump_dir, current_state, "latent", rank)
+
+        # Store the results in cached_df
+        for k, v in results.items():
+            if k == "tokens":
+                if "tokens" not in cached_df:
+                    cached_df.loc[:, "tokens"] = v  # for tokens, they are global
+                else:
+                    continue
+            else:
+                cached_df.loc[:, f"{model_name}_{k}"] = v
+
+    save(dump_dir, "latent", current_df, rank)
+    logger.warning(
+        f"Saved inference results for concept {concept_id} to rank_{rank}_latent_data.parquet"
+    )
+    # After processing, save state
+    current_state = {"last_concept_id": my_concept_ids[-1]}
+    save_state(dump_dir, current_state, "latent", rank)
 
     # Synchronize all processes
     if dist.is_initialized():
@@ -1131,6 +1154,8 @@ def run_eval(cfg: DictConfig):
     elif cfg.axbench.type == "all":
         eval_steering(args)
         eval_latent(args)
+    else:
+        raise ValueError(f"Invalid inference type: {cfg.axbench.type}")
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
@@ -1191,6 +1216,8 @@ def main(cfg: DictConfig):
         elif exp_cfg.axbench.mode == "all":
             run_inference(exp_cfg, device)
             run_eval(exp_cfg)
+        else:
+            raise ValueError(f"Invalid mode: {exp_cfg.axbench.mode}")
 
         if cfg.device_mode == "cuda":
             torch.cuda.empty_cache()

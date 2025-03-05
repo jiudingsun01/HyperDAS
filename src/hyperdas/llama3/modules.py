@@ -701,10 +701,13 @@ class LlamaInterpretorForSteering(nn.Module):
         # prune kwargs for generation
         target_kwargs = {}
         for kw in kwargs.keys():
-            if kw.startswith("target_"):
-                target_kwargs[kw.replace("target_", "")] = kwargs[kw]
-            elif all(not kw.startswith(x) for x in ["base", "editor", "intervention"]):
-                target_kwargs[kw] = kwargs[kw]
+            if "weights" not in kw:
+                if kw.startswith("target_"):
+                    target_kwargs[kw.replace("target_", "")] = kwargs[kw]
+                elif all(
+                    not kw.startswith(x) for x in ["base", "editor", "intervention"]
+                ):
+                    target_kwargs[kw] = kwargs[kw]
 
         if do_intervention:
             try:
@@ -721,7 +724,7 @@ class LlamaInterpretorForSteering(nn.Module):
             # Only apply intervention during prefill phase
             if (
                 self._temp_global_cache["prompt_lengths"][0]
-                == target_kwargs.get("past_key_value").seen_tokens
+                == target_kwargs.get("past_key_value").get_seq_length().item()
             ):
                 hidden_states = output[0]
                 kwargs["generation"] = True
@@ -730,13 +733,13 @@ class LlamaInterpretorForSteering(nn.Module):
                 )
                 _ = self.forward(**kwargs)
                 self._temp_global_cache["current_layer_rel_idx"] = layer_idx
-                modified_states, _ = self._apply_intervention(
+                modified_states = self._apply_intervention(
                     hidden_states,
                     intervention_positions=kwargs.get("intervention_positions"),
                 )
                 # Manually handle cache clearing
                 self._temp_global_cache.clear()
-                output = (modified_states,) + output[1:]
+                output = (modified_states.mixed_output,) + output[1:]
 
             return output
 
@@ -959,7 +962,14 @@ class LlamaInterpretorForSteering(nn.Module):
         if target_weights is not None:
             # Override weight generation logic
             weight_matrix = target_weights
-            self._temp_global_cache["weight_matrix"] = weight_matrix
+            self._temp_global_cache["weight_matrix"] = weight_matrix[
+                :, None, None, :
+            ].expand(
+                -1,
+                intervention_layers.shape[0],
+                -1,
+                -1,
+            )
         elif run_weight_generation and self.config.reft_hypernetwork == "LoReFT":
             # run hypernetwork to generate ReFT weights
             # each of shape (B, L, P, H, R)
