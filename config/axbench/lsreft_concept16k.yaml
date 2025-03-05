@@ -35,7 +35,7 @@ train:
       exclude_bos: true
 inference:
   use_bf16: true
-  models: ["LsReFT"]
+  models: ["LsReFT", "PromptSteering"]
   model_name: "google/gemma-2-2b-it"
   # latent related params
   output_length: 128
@@ -58,7 +58,7 @@ inference:
   # generation related params
   temperature: 1.0
 evaluate:
-  models: ["LsReFT"]
+  models: ["LsReFT", "PromptSteering"]
   latent_evaluators: ["AUCROCEvaluator", "HardNegativeEvaluator"]
   steering_evaluators: ["PerplexityEvaluator", "LMJudgeEvaluator"]
   winrate_split_ratio: 0.5 # this is for steering only, we use a separate partition for factor selection.

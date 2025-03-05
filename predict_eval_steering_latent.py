@@ -202,6 +202,17 @@ def predict_steering(
             for output, length in zip(outputs, input_lengths)
         ]
 
+        # Print generations alongside inputs and concepts
+        # for gen, batch_input, concept in zip(
+        #     generations, raw_batch["input"], raw_batch["input_concept"]
+        # ):
+        #     print(f"\nGENERATION: {gen}")
+        #     print(f"INPUT: {batch_input}")
+        #     print(f"CONCEPT: {concept}")
+        #     print("-" * 80)
+
+        # breakpoint()
+
         # Calculate perplexity
         gen_ids = target_model_tokenizer(
             generations, return_tensors="pt", padding=True, truncation=True
@@ -297,6 +308,7 @@ def predict_latent(
             return_intervened_states=True,
         )
 
+        # TODO(sid): fix because we aren't grouping by concept anymore
         # Extract activations
         gathered_intervened_acts = outputs.gathered_intervened_states[0]
         # Get weights for detection scores (identical across batch)
@@ -689,6 +701,18 @@ def infer_latent(
     concept_ids_per_rank = partition_concept_ids(concept_ids, world_size)
     my_concept_ids = concept_ids_per_rank[rank]
 
+    # Load reconstruction data
+    if config.axbench.inference.reconstruction_data_path is not None:
+        reconstruction_data = torch.load(
+            config.axbench.inference.reconstruction_data_path,
+            map_location="cpu",
+            mmap=True,
+        )
+        # Map from concept_id -> subspace
+        reconstruction_data = {idx: reconstruction_data[idx] for idx in my_concept_ids}
+    else:
+        reconstruction_data = None
+
     if last_concept_id_processed is not None:
         if last_concept_id_processed in my_concept_ids:
             idx = my_concept_ids.index(last_concept_id_processed)
@@ -814,6 +838,7 @@ def infer_latent(
             target_model_tokenizer=tokenizer,
             hypernet_tokenizer=hypernet_tokenizer,
             concept_df=cached_df,
+            reconstruction_data=reconstruction_data,
             device=device,
             model_name=model_name,
             batch_size=config.axbench.inference.latent_batch_size,

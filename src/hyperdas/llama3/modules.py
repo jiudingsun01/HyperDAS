@@ -755,6 +755,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 else self.config.intervention_layer
             )
             if layer_idx in intervention_layers:
+                breakpoint()
                 # NOTE: important to allow kwargs else we can't check if in generation mode all kwargs ignored!
                 current_layer_rel_idx = intervention_layers.index(layer_idx)
                 # Use rel idx because of cache positioning

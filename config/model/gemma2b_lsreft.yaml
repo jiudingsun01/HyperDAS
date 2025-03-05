@@ -5,8 +5,8 @@ defaults:
 subspace_module: "BatchLsReFT"
 name_or_path: null
 target_model_name_or_path: "google/gemma-2-2b-it"
-intervention_layer: [10]
-intervention_positions: "f7+l7"
+intervention_layer: [20]
+intervention_positions: "all"
 
 use_lm_hypernetwork: false
 interpretor_type: "steering"

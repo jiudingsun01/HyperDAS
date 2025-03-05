@@ -352,13 +352,12 @@ class BatchLsReftIntervention(nn.Module):
             self.hidden_dim - self.top_k, dim=-1, largest=False
         )[0]
         # (B, P, 1)
-        norm_values = topk_values.norm(p=1, dim=-1).unsqueeze(-1) / self.top_k
+        norm_values = topk_values.norm(p=1, dim=(1, 2), keepdim=True) / self.top_k
+        batch_steering_vec = norm_values * batch_weights
 
         # Additive intervention
         intervened_output = base.clone()
-        intervened_output[batch_indices, intervention_positions] += (
-            norm_values * batch_weights
-        )
+        intervened_output[batch_indices, intervention_positions] += batch_steering_vec
 
         return InterventionModuleOutput(
             mixed_output=intervened_output.to(base.dtype),
