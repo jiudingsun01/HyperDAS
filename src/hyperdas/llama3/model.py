@@ -13,12 +13,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import transformers
+import wandb
 from omegaconf import DictConfig, ListConfig, OmegaConf
+from torch.nn import functional as F
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import ModelOutput
 
-import wandb
 from logger import get_logger
 from src.hyperdas.data.axbench import parse_positions_varlen
 
@@ -1139,9 +1140,12 @@ class SteeringInterpretor(BaseInterpretor):
             and "reconstruction" in self.config.model.objective
         ):
             mse_criterion = torch.nn.MSELoss(reduction="mean")
-            similarity_criterion = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
+            similarity_criterion = torch.nn.CosineSimilarity(dim=-1)
             # (B, P, H)
-            predicted_weights = _pred.extra_outputs["weight_matrix"]
+            # NOTE: we use normalized version only for reconstruction objective (preserve magnitudes for downstream tasks?)
+            predicted_weights = F.normalize(
+                _pred.extra_outputs["weight_matrix"], dim=-1
+            )
             # TODO(sid): squeeze for now but support multilayer/position target regression soon
             cosine_loss = (
                 1
@@ -1266,7 +1270,6 @@ class SteeringInterpretor(BaseInterpretor):
         epochs = self.config.training.n_epochs
         steps = self.config.training.n_steps
         test_per_steps = self.config.training.test_per_steps
-        eval_per_steps = self.config.training.eval_per_steps
         checkpoint_per_steps = self.config.training.checkpoint_per_steps
         save_dir = self.config.training.save_dir
         save_model = self.config.training.save_model
@@ -1277,8 +1280,9 @@ class SteeringInterpretor(BaseInterpretor):
         warmup_ratio = self.config.training.warmup_ratio
         scheduler_type = self.config.training.scheduler_type
 
-        os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
-        OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
+        if not self.config.training.debug_model:
+            os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
+            OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
 
         trainable_parameters = []
         for name, param in self.named_parameters():
@@ -1326,7 +1330,10 @@ class SteeringInterpretor(BaseInterpretor):
                             for loader in test_loader:
                                 metrics[loader.name] = self.predict(loader)
                             # Dump to json file
-                            if save_dir is not None:
+                            if (
+                                save_dir is not None
+                                and not self.config.training.debug_model
+                            ):
                                 metrics_path = os.path.join(
                                     save_dir,
                                     run_name,
@@ -1337,25 +1344,19 @@ class SteeringInterpretor(BaseInterpretor):
                                 )
                                 with open(metrics_path, "w") as f:
                                     json.dump(metrics, f, indent=2)
-                        if (
-                            eval_dataset
-                            and cur_steps > 0
-                            and cur_steps % eval_per_steps == 0
-                        ):
-                            metrics = self.evaluate(eval_dataset)
-                            if save_dir is not None:
-                                metrics_path = os.path.join(
-                                    save_dir,
-                                    run_name,
-                                    f"eval_metrics_epoch_{epoch}_step_{cur_steps}.json",
-                                )
-                                os.makedirs(
-                                    os.path.dirname(metrics_path), exist_ok=True
-                                )
-                                with open(metrics_path, "w") as f:
-                                    json.dump(metrics, f, indent=2)
 
-                    if checkpoint_per_steps is not None:
+                            if wandb.run and not self.config.training.debug_model:
+                                for k, v in metrics[loader.name].items():
+                                    wandb.log(
+                                        {
+                                            f"test/{loader.name}_{k}": v,
+                                        }
+                                    )
+
+                    if (
+                        checkpoint_per_steps is not None
+                        and not self.config.training.debug_model
+                    ):
                         if (
                             cur_steps > 0
                             and cur_steps % checkpoint_per_steps == 0
@@ -1420,8 +1421,8 @@ class SteeringInterpretor(BaseInterpretor):
 
                     loss_metrics = {}
                     for key, value in prediction.items():
-                        if key.endswith("_loss") and isinstance(value, torch.Tensor):
-                            loss_metrics[f"train_batch_{key}"] = value.item()
+                        if key.endswith("loss") and isinstance(value, torch.Tensor):
+                            loss_metrics[f"train/{key}"] = value.item()
 
                     # Calculate gradient norms for all modules
                     grad_norm_metrics = {}
@@ -1459,28 +1460,26 @@ class SteeringInterpretor(BaseInterpretor):
                     metrics = {
                         "counters/step": cur_steps,
                         "counters/epoch": cur_steps / len(train_loader),
-                        "train_batch_prediction_loss": prediction_loss.item(),
-                        "grad_norm": total_grad_norm.item(),
-                        "learning_rate": self.lr_scheduler.get_last_lr()[0]
+                        "debug/grad_norm": total_grad_norm.item(),
+                        "counters/learning_rate": self.lr_scheduler.get_last_lr()[0]
                         if self.lr_scheduler
                         else self.opt.param_groups[0]["lr"],
-                        **prediction.metrics,
+                        **{f"debug/{k}": v for k, v in prediction.metrics.items()},
                         **grad_norm_metrics,
                         **loss_metrics,
                     }
 
-                    if wandb.run:
+                    if wandb.run and not self.config.training.debug_model:
                         wandb.log(metrics)
                     if cur_steps % self.config.training.log_per_steps == 0:
                         output_metrics = {**metrics}
-
                         logger.info(output_metrics)
 
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
 
-                if wandb.run:
+                if wandb.run and not self.config.training.debug_model:
                     wandb.log(
                         {
                             "epoch_train_total_loss": epoch_train_loss
@@ -1492,13 +1491,11 @@ class SteeringInterpretor(BaseInterpretor):
             result_dict = {}
             for tl in test_loader:
                 result_dict[tl.name] = self.predict(tl)
-            if eval_dataset:
-                result_dict["eval"] = self.evaluate(eval_dataset)
 
         # Save the final model
-        if save_model and save_dir:
+        if save_model and save_dir and not self.config.training.debug_model:
             self.save_model(os.path.join(save_dir, run_name, "final_model"))
-        if save_dir:
+        if save_dir and not self.config.training.debug_model:
             json.dump(
                 result_dict,
                 open(os.path.join(save_dir, run_name, "final_result.json"), "w"),

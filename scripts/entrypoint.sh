@@ -61,6 +61,16 @@ for key in /root/.ssh/*; do
     fi
 done
 
+# Test GitHub SSH connection
+echo "🔍 Testing GitHub SSH connection..."
+if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    echo "✅ GitHub SSH connection successful"
+else
+    echo "❌ GitHub SSH connection failed"
+    exit 1
+fi
+
+
 # Move git config setup to beginning before any other operations
 echo "🔧 Setting up git configuration..."
 

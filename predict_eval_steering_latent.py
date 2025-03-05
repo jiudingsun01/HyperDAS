@@ -576,7 +576,6 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
     assert (
         cfg.training.load_trained_from is not None
     ), "Please specify a checkpoint to load from"
-    cfg.axbench.inference.dump_dir = cfg.axbench.dump_dir
 
     if cfg.axbench.type == "steering":
         infer_steering(

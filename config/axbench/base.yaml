@@ -1,5 +1,6 @@
 mode: inference # or eval, all
 type: steering # or latent, all
+cache_dir: "assets/data/axbench/cache"
 
 generate:
   lm_model: "gpt-4o-mini"

@@ -201,6 +201,7 @@ def run_experiment(
         pin_memory=True,
     )
 
+    # TODO(sid): better naming for data loaders
     if isinstance(test_set, list):
         test_data_loader = [
             NamedDataLoader(
@@ -233,7 +234,7 @@ def run_experiment(
                 ),
                 raw=test_set,
                 name=os.path.basename(
-                    config.dataset.test_path or config.dataset.train_path
+                    config.dataset.test_path or config.dataset.train_path + "_test"
                 ),
             )
         ]
