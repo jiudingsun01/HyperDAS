@@ -1130,7 +1130,7 @@ class SteeringInterpretor(BaseInterpretor):
                 non_topk_latents = _pred.extra_outputs["non_topk_latents"]
                 sparsity_loss = (
                     self.config.model.topk_sparsity_weight
-                    * non_topk_latents.norm(p=1, dim=-1).mean()
+                    * non_topk_latents.norm(p=1, dim=-1).sum(-1)
                 )
                 _pred["sparsity_loss"] = sparsity_loss
                 sft_loss += sparsity_loss
@@ -1143,9 +1143,7 @@ class SteeringInterpretor(BaseInterpretor):
             similarity_criterion = torch.nn.CosineSimilarity(dim=-1)
             # (B, P, H)
             # NOTE: we use normalized version only for reconstruction objective (preserve magnitudes for downstream tasks?)
-            predicted_weights = F.normalize(
-                _pred.extra_outputs["weight_matrix"], dim=-1
-            )
+            predicted_weights = _pred.extra_outputs["weight_matrix"]
             # TODO(sid): squeeze for now but support multilayer/position target regression soon
             cosine_loss = (
                 1

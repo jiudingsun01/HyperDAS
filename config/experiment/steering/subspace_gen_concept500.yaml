@@ -12,7 +12,7 @@ training:
   n_epochs: 5
   test_per_steps: 100
   save_model: true
-  debug_model: true
+  debug_model: false
   train_batch_size: 32
   test_batch_size: 16
   checkpoint_per_steps: 500

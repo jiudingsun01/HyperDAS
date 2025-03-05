@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 from transformers.activations import ACT2FN
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
@@ -242,7 +243,8 @@ class LsReFTHypernetwork(nn.Module):
         weight_matrix = self.weight_head(combined_embedding).reshape(
             -1, n_layers, n_positions, self.target_embed_dim
         )
-        return weight_matrix
+        # unit norm
+        return F.normalize(weight_matrix, dim=-1)
 
 
 class HiddenStatesProjectionMLP(nn.Module):
@@ -350,7 +352,7 @@ class BatchLsReftIntervention(nn.Module):
             self.hidden_dim - self.top_k, dim=-1, largest=False
         )[0]
         # (B, P, 1)
-        norm_values = topk_values.norm(p=1, dim=-1).unsqueeze(-1)
+        norm_values = topk_values.norm(p=1, dim=-1).unsqueeze(-1) / self.top_k
 
         # Additive intervention
         intervened_output = base.clone()

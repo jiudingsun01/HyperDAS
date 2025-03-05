@@ -529,9 +529,9 @@ class LlamaInterpretorForSteering(nn.Module):
             self.hypernetwork = None
 
         if config.reft_hypernetwork == "LsReFT":
-            assert (
-                len(config.intervention_layer_list) == 1
-            ), "LsReFT only supports 1 layer"
+            assert len(config.intervention_layer_list) == 1, (
+                "LsReFT only supports 1 layer"
+            )
 
         logger.debug("Initializing ReFT hypernetwork")
         if config.reft_hypernetwork == "LoReFT":
@@ -788,6 +788,7 @@ class LlamaInterpretorForSteering(nn.Module):
             ]
         else:
             rotation_matrix = None
+
         weight_matrix = self._temp_global_cache["weight_matrix"][
             :, current_layer_rel_idx
         ]
@@ -827,6 +828,7 @@ class LlamaInterpretorForSteering(nn.Module):
         generation: bool = False,
         return_base_states: bool = False,
         return_intervened_states: bool = False,
+        target_weights: torch.Tensor | None = None,  # ground truth override
         **kwargs,
     ) -> InterpretorModelOutput:
         if intervention_layers is None:
@@ -954,7 +956,11 @@ class LlamaInterpretorForSteering(nn.Module):
                 1, intervention_layers.shape[0], 1, 1
             )
 
-        if run_weight_generation and self.config.reft_hypernetwork == "LoReFT":
+        if target_weights is not None:
+            # Override weight generation logic
+            weight_matrix = target_weights
+            self._temp_global_cache["weight_matrix"] = weight_matrix
+        elif run_weight_generation and self.config.reft_hypernetwork == "LoReFT":
             # run hypernetwork to generate ReFT weights
             # each of shape (B, L, P, H, R)
             rotation_matrix, weight_matrix = self.steering_hypernetwork(
@@ -962,13 +968,13 @@ class LlamaInterpretorForSteering(nn.Module):
             )
             self._temp_global_cache["rotation_matrix"] = rotation_matrix
             self._temp_global_cache["weight_matrix"] = weight_matrix
-            self._temp_global_cache["hypernet_hidden_states"] = hypernet_hidden_states
         elif run_weight_generation and self.config.reft_hypernetwork == "LsReFT":
             weight_matrix = self.steering_hypernetwork(
                 hypernet_hidden_states, intervention_layers, intervention_positions
             )
             self._temp_global_cache["weight_matrix"] = weight_matrix
-            self._temp_global_cache["hypernet_hidden_states"] = hypernet_hidden_states
+
+        self._temp_global_cache["hypernet_hidden_states"] = hypernet_hidden_states
 
         metrics = {}
         extra_outputs = {}
@@ -997,7 +1003,7 @@ class LlamaInterpretorForSteering(nn.Module):
                     )
 
                 metrics, extra_outputs = output.metrics, output.extra_outputs
-                output[0][:] += output.mixed_output
+                output[0] = output.mixed_output
 
             # Now editing the target model
             if intervention_layers is None:

@@ -13,6 +13,7 @@ from typing import Dict, List
 import einops
 import httpx
 import hydra
+from hypothesis import target
 import pandas as pd
 import torch
 import torch.distributed as dist
@@ -95,7 +96,7 @@ def predict_steering(
     concept_df: pd.DataFrame,
     device: str,
     mode: AxbenchMode,
-    reconstruction_data=None,
+    reconstruction_data: Dict[str, torch.Tensor] = None,
     batch_size: int = 16,
     eval_output_length: int = 100,
     temperature: float = 0.7,
@@ -113,7 +114,7 @@ def predict_steering(
         test_dataloader: DataLoader containing test data
         device: Device to run inference on
         mode: an InferenceModes enum value
-        reconstruction_data: reconstruction data
+        reconstruction_data: reconstruction data (alternative to hypernetwork)
         max_test_steps: Maximum number of eval steps (-1 for no limit)
         max_new_tokens: Maximum number of tokens to generate
         temperature: Sampling temperature
@@ -138,6 +139,16 @@ def predict_steering(
             intervention_positions=intervention_positions,
         )(converted_batch)
 
+        # Overrides hypernetwork weight generation with ground truth trained weights
+        if reconstruction_data is not None:
+            # Get concept IDs from the batch
+            concept_ids = [row.concept_id for row in raw_batch.itertuples()]
+            # Select tensors for these concept IDs
+            batch_weights = torch.stack(
+                [reconstruction_data[concept_id] for concept_id in concept_ids]
+            )
+            batch["target_weights"] = batch_weights
+
         # Move batch to GPU
         batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -153,6 +164,7 @@ def predict_steering(
                 target_position_ids=batch.get("target_position_ids"),
                 intervention_layers=batch.get("intervention_layers"),
                 intervention_positions=batch.get("intervention_positions"),
+                target_weights=batch.get("target_weights"),
                 max_new_tokens=eval_output_length,
                 do_sample=do_sample,
                 temperature=temperature,
@@ -210,6 +222,7 @@ def predict_latent(
     hypernet_tokenizer,
     concept_df: pd.DataFrame,
     device: str,
+    reconstruction_data: Dict[str, torch.Tensor] = None,
     batch_size: int = 16,
     intervention_positions: str = None,
     intervention_layers: List[int] = None,
@@ -225,6 +238,7 @@ def predict_latent(
         hypernet_tokenizer: Tokenizer for the hypernetwork arch
         concept_df: DataFrame containing concept examples
         device: Device to run inference on
+        reconstruction_data: reconstruction data (alternative to hypernetwork)
         batch_size: Batch size for processing
         intervention_positions: Intervention positions
         intervention_layers: Intervention layers
@@ -246,6 +260,15 @@ def predict_latent(
             intervention_positions=intervention_positions,
         )(converted_batch)
 
+        if reconstruction_data is not None:
+            # Get concept IDs from the batch
+            concept_ids = [row.concept_id for row in raw_batch.itertuples()]
+            # Select tensors for these concept IDs
+            batch_weights = torch.stack(
+                [reconstruction_data[concept_id] for concept_id in concept_ids]
+            )
+            batch["target_weights"] = batch_weights
+
         # Move batch to GPU
         batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -257,6 +280,7 @@ def predict_latent(
             target_position_ids=batch.get("target_position_ids", None),
             intervention_layers=batch.get("intervention_layers", None),
             intervention_positions=batch.get("intervention_positions", None),
+            target_weights=batch.get("target_weights", None),
             is_causal=batch.get("is_causal", None),
             return_intervened_states=True,
         )
@@ -266,12 +290,10 @@ def predict_latent(
         # Get weights for detection scores (identical across batch)
         weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :].mean(0)
         # Compute detection scores
-        detection_scores = torch.relu(
-            einops.einsum(
-                gathered_intervened_acts,
-                weights.transpose(-1, -2),
-                "b s h, h j -> b s",
-            )
+        detection_scores = einops.einsum(
+            gathered_intervened_acts,
+            weights.transpose(-1, -2),
+            "b s h, h j -> b s",
         )
 
         # Process each sequence in the batch
@@ -573,9 +595,9 @@ def infer_steering(config, rank, world_size, device, logger):
 
 
 def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
-    assert (
-        cfg.training.load_trained_from is not None
-    ), "Please specify a checkpoint to load from"
+    assert cfg.training.load_trained_from is not None, (
+        "Please specify a checkpoint to load from"
+    )
 
     if cfg.axbench.type == "steering":
         infer_steering(
@@ -1049,9 +1071,9 @@ def find_run_by_name(run_name, entity, project):
 def run_eval(cfg: DictConfig):
     args = cfg.axbench.evaluate
 
-    assert (
-        cfg.training.load_trained_from is not None
-    ), "Please specify a checkpoint to load from"
+    assert cfg.training.load_trained_from is not None, (
+        "Please specify a checkpoint to load from"
+    )
 
     checkpoint_path = Path(cfg.training.load_trained_from)
     # load config from checkpoint
