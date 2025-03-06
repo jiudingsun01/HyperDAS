@@ -692,7 +692,8 @@ class LlamaInterpretorForSteering(nn.Module):
         return outputs.hidden_states
 
     def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
-        do_intervention = kwargs.pop("do_intervention", True)
+        _do_intervention = kwargs.pop("do_intervention", True)
+        _intervene_during_generation = kwargs.pop("intervene_during_generation", True)
 
         # Prompt length is used later to determine if we are in generation mode
         self._temp_global_cache["prompt_lengths"] = [
@@ -710,7 +711,7 @@ class LlamaInterpretorForSteering(nn.Module):
                 ):
                     target_kwargs[kw] = kwargs[kw]
 
-        if do_intervention:
+        if _do_intervention:
             try:
                 self.prepare_for_generation(**kwargs)
                 outputs = self.target_model.generate(*args, **target_kwargs)
@@ -722,7 +723,7 @@ class LlamaInterpretorForSteering(nn.Module):
 
     def _create_generate_intervention_hook(self, layer_idx, **kwargs):
         def intervention_forward(module, input, target_kwargs, output):
-            # Only apply intervention during prefill phase
+            # Only compute intervention weights during prefill phase
             if (
                 self._temp_global_cache["prompt_lengths"][0]
                 == target_kwargs.get("past_key_value").get_seq_length().item()
@@ -741,9 +742,25 @@ class LlamaInterpretorForSteering(nn.Module):
                     factors=kwargs.get("factors"),
                     max_acts=kwargs.get("max_acts"),
                 )
-                # Manually handle cache clearing
-                self._temp_global_cache.clear()
+                # clear cache if won't be used later
+                if not kwargs.get("intervene_during_generation", True):
+                    self._temp_global_cache.clear()
                 output = (modified_states.mixed_output,) + output[1:]
+            elif kwargs.get("intervene_during_generation", True):
+                hidden_states = output[0]
+                self._temp_global_cache["current_layer_rel_idx"] = layer_idx
+                modified_states = self._apply_intervention(
+                    hidden_states,
+                    intervention_positions=torch.zeros(
+                        hidden_states.shape[0],
+                        1,
+                        dtype=torch.long,
+                        device=hidden_states.device,
+                    ),
+                    steering=True,
+                    factors=kwargs.get("factors"),
+                    max_acts=kwargs.get("max_acts"),
+                )
 
             return output
 
@@ -775,6 +792,7 @@ class LlamaInterpretorForSteering(nn.Module):
         for hook in self.intervention_hooks:
             hook.remove()
         self.intervention_hooks.clear()
+        self._temp_global_cache.clear()
 
     def _apply_intervention(
         self,

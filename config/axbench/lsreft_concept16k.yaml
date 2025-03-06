@@ -47,9 +47,9 @@ inference:
   steering_datasets: ["AlpacaEval"]
   steering_batch_size: 10
   steering_output_length: 128
-  steering_layers: [10]
+  steering_layers: [20]
   steering_num_of_examples: 10 # number of examples per concept and per factor
-  steering_factors: [1] # number of steering factors per example
+  steering_factors: [1.0] # number of steering factors per example
   # master data dir is shared across all jobs.
   master_data_dir: "assets/data/axbench"
   data_dir: axbench/axbench/concept500/prod_2b_l20_v1/generate

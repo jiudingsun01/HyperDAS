@@ -127,7 +127,7 @@ def predict_steering(
     concept_df: pd.DataFrame,
     device: str,
     mode: AxbenchMode,
-    reconstruction_data: Dict[str, torch.Tensor] = None,
+    ground_truth_intervention: Dict[str, torch.Tensor] = None,
     batch_size: int = 16,
     eval_output_length: int = 100,
     temperature: float = 0.7,
@@ -135,6 +135,7 @@ def predict_steering(
     intervention_positions: str = None,
     intervention_layers: List[int] = None,
     max_acts_map: Dict[int, float] = None,
+    intervene_during_generation: bool = True,
     **kwargs,
 ) -> Dict[str, float]:
     """
@@ -155,6 +156,7 @@ def predict_steering(
         intervention_positions: Intervention positions
         intervention_layers: Intervention layers
         max_acts_map: max activations for each concept
+        inteerve_during_generation: Whether to intervene during generation
     """
     all_generations = []
     all_perplexities = []
@@ -173,12 +175,12 @@ def predict_steering(
         )(converted_batch)
 
         # Overrides hypernetwork weight generation with ground truth trained weights
-        if reconstruction_data is not None:
+        if ground_truth_intervention is not None:
             # Get concept IDs from the batch
             concept_ids = [row.concept_id for row in raw_batch.itertuples()]
             # Select tensors for these concept IDs
             batch_weights = torch.stack(
-                [reconstruction_data[concept_id] for concept_id in concept_ids]
+                [ground_truth_intervention[concept_id] for concept_id in concept_ids]
             )
             batch["target_weights"] = batch_weights
 
@@ -231,15 +233,15 @@ def predict_steering(
         ]
 
         # Print generations alongside inputs and concepts
-        # for gen, batch_input, concept in zip(
-        #     generations, raw_batch["input"], raw_batch["input_concept"]
-        # ):
-        #     print(f"\nGENERATION: {gen}")
-        #     print(f"INPUT: {batch_input}")
-        #     print(f"CONCEPT: {concept}")
-        #     print("-" * 80)
+        for gen, batch_input, concept in zip(
+            generations, raw_batch["input"], raw_batch["input_concept"]
+        ):
+            print(f"\nGENERATION: {gen}")
+            print(f"INPUT: {batch_input}")
+            print(f"CONCEPT: {concept}")
+            print("-" * 80)
 
-        # breakpoint()
+        breakpoint()
 
         # Calculate perplexity
         gen_ids = target_model_tokenizer(
@@ -273,7 +275,7 @@ def predict_latent(
     hypernet_tokenizer,
     concept_df: pd.DataFrame,
     device: str,
-    reconstruction_data: Dict[str, torch.Tensor] = None,
+    ground_truth_intervention: Dict[str, torch.Tensor] = None,
     batch_size: int = 16,
     intervention_positions: str = None,
     intervention_layers: List[int] = None,
@@ -311,12 +313,12 @@ def predict_latent(
             intervention_positions=intervention_positions,
         )(converted_batch)
 
-        if reconstruction_data is not None:
+        if ground_truth_intervention is not None:
             # Get concept IDs from the batch
             concept_ids = [row.concept_id for row in raw_batch.itertuples()]
             # Select tensors for these concept IDs
             batch_weights = torch.stack(
-                [reconstruction_data[concept_id] for concept_id in concept_ids]
+                [ground_truth_intervention[concept_id] for concept_id in concept_ids]
             )
             batch["target_weights"] = batch_weights
 
@@ -336,16 +338,15 @@ def predict_latent(
             return_intervened_states=True,
         )
 
-        # TODO(sid): fix because we aren't grouping by concept anymore
-        # Extract activations
+        # Extract activations (B, S, H)
         gathered_intervened_acts = outputs.gathered_intervened_states[0]
-        # Get weights for detection scores (identical across batch)
-        weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :].mean(0)
+        # Get weights for detection scores (B, 1, H)
+        weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :]
         # Compute detection scores
         detection_scores = einops.einsum(
             gathered_intervened_acts,
-            weights.transpose(-1, -2),
-            "b s h, h j -> b s",
+            weights,
+            "b s h, b j h -> b s j",
         )
 
         # Process each sequence in the batch
@@ -414,16 +415,27 @@ def infer_steering(config, rank, world_size, device, logger):
     my_concept_ids = concept_ids_per_rank[rank]
 
     # Load reconstruction data
-    if config.axbench.inference.reconstruction_data_path is not None:
-        reconstruction_data = torch.load(
-            config.axbench.inference.reconstruction_data_path,
+    if config.axbench.inference.ground_truth_intervention_dir is not None:
+        ground_truth_intervention = torch.load(
+            Path(config.axbench.inference.ground_truth_intervention_dir)
+            / "LsReFT_weight.pt",
             map_location="cpu",
             mmap=True,
         )
-        # Map from concept_id -> subspace
-        reconstruction_data = {idx: reconstruction_data[idx] for idx in my_concept_ids}
+        # Load metadata to get concept indices
+        metadata = load_metadata_flatten(
+            Path(config.axbench.inference.ground_truth_intervention_dir)
+            / "metadata.jsonl"
+        )
+        concept_to_idx = {m["concept_id"]: i for i, m in enumerate(metadata)}
+
+        # Map from concept_id -> subspace using metadata indices
+        ground_truth_intervention = {
+            concept_id: ground_truth_intervention[concept_to_idx[concept_id]]
+            for concept_id in my_concept_ids
+        }
     else:
-        reconstruction_data = None
+        ground_truth_intervention = None
 
     if last_concept_id_processed is not None:
         if last_concept_id_processed in my_concept_ids:
@@ -491,7 +503,12 @@ def infer_steering(config, rank, world_size, device, logger):
 
     if config.training.load_trained_from is not None:
         logger.info(f"Loading model from {config.training.load_trained_from}")
-        model_instance.load_model(config.training.load_trained_from)
+        try:
+            model_instance.load_model(config.training.load_trained_from)
+        except Exception as e:
+            logger.error(
+                f"Failed to load model from {config.training.load_trained_from}: {e}"
+            )
 
     model_instance.eval()
     logger.info("Model loaded and set to eval mode")
@@ -572,7 +589,7 @@ def infer_steering(config, rank, world_size, device, logger):
             hypernet_tokenizer,
             cached_df,
             device,
-            reconstruction_data=reconstruction_data,
+            ground_truth_intervention=ground_truth_intervention,
             mode=axbench_mode_map[model_name],
             batch_size=config.axbench.inference.steering_batch_size,
             eval_output_length=config.axbench.inference.steering_output_length,
@@ -581,6 +598,7 @@ def infer_steering(config, rank, world_size, device, logger):
             intervention_positions=config.model.intervention_positions,
             intervention_layers=config.model.intervention_layer,
             max_acts_map=max_acts_map,
+            intervene_during_generation=config.axbench.inference.intervene_during_generation,
         )
 
         # Store the results in cached_df
@@ -706,6 +724,8 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
             device,
             get_logger("infer_steering"),
         )
+    else:
+        raise ValueError(f"Invalid inference type: {cfg.axbench.type}")
 
 
 def infer_latent(
@@ -736,16 +756,27 @@ def infer_latent(
     my_concept_ids = concept_ids_per_rank[rank]
 
     # Load reconstruction data
-    if config.axbench.inference.reconstruction_data_path is not None:
-        reconstruction_data = torch.load(
-            config.axbench.inference.reconstruction_data_path,
+    if config.axbench.inference.ground_truth_intervention_dir is not None:
+        ground_truth_intervention = torch.load(
+            Path(config.axbench.inference.ground_truth_intervention_dir)
+            / "LsReFT_weight.pt",
             map_location="cpu",
             mmap=True,
         )
-        # Map from concept_id -> subspace
-        reconstruction_data = {idx: reconstruction_data[idx] for idx in my_concept_ids}
+        # Load metadata to get concept indices
+        metadata = load_metadata_flatten(
+            Path(config.axbench.inference.ground_truth_intervention_dir)
+            / "metadata.jsonl"
+        )
+        concept_to_idx = {m["concept_id"]: i for i, m in enumerate(metadata)}
+
+        # Map from concept_id -> subspace using metadata indices
+        ground_truth_intervention = {
+            concept_id: ground_truth_intervention[concept_to_idx[concept_id]]
+            for concept_id in my_concept_ids
+        }
     else:
-        reconstruction_data = None
+        ground_truth_intervention = None
 
     if last_concept_id_processed is not None:
         if last_concept_id_processed in my_concept_ids:
@@ -798,7 +829,12 @@ def infer_latent(
 
     if config.training.load_trained_from is not None:
         logger.info(f"Loading model from {config.training.load_trained_from}")
-        model_instance.load_model(config.training.load_trained_from)
+        try:
+            model_instance.load_model(config.training.load_trained_from)
+        except Exception as e:
+            logger.error(
+                f"Failed to load model from {config.training.load_trained_from}: {e}"
+            )
 
     model_instance.eval()
     logger.info("Model loaded and set to eval mode")
@@ -861,7 +897,8 @@ def infer_latent(
 
         # Cache the results
         if all_dfs:
-            cached_df = pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
+            cached_df = pd.concat(all_dfs, ignore_index=True)
+            cached_df.to_parquet(cache_file)
             logger.info(f"Cached latent data to {cache_file}")
 
     # Process all concepts in one go
@@ -872,7 +909,7 @@ def infer_latent(
             target_model_tokenizer=tokenizer,
             hypernet_tokenizer=hypernet_tokenizer,
             concept_df=cached_df,
-            reconstruction_data=reconstruction_data,
+            ground_truth_intervention=ground_truth_intervention,
             device=device,
             model_name=model_name,
             batch_size=config.axbench.inference.latent_batch_size,
@@ -892,7 +929,7 @@ def infer_latent(
 
     save(dump_dir, "latent", cached_df, rank)
     logger.warning(
-        f"Saved inference results for concept {concept_id} to rank_{rank}_latent_data.parquet"
+        f"Saved inference results from concept {my_concept_ids[0]} to {my_concept_ids[-1]} to rank_{rank}_latent_data.parquet"
     )
     # After processing, save state
     current_state = {"last_concept_id": my_concept_ids[-1]}

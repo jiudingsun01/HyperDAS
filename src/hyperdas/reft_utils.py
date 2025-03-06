@@ -323,8 +323,12 @@ class BatchLsReftIntervention(nn.Module):
 
         if steering:
             # We are in steering mode, so we just need to apply the steering vec
+            print(
+                "SCALE",
+                (20 * max_acts[:, None, None] * factors[:, None, None]).mean().item(),
+            )
             batch_steering_vec = (
-                max_acts[:, None, None] * factors[:, None, None] * batch_weights
+                20 * max_acts[:, None, None] * factors[:, None, None] * batch_weights
             )
             extra_outputs = {}
         else:
