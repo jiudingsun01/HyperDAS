@@ -285,39 +285,6 @@ class LowRankRotateLayer(torch.nn.Module):
         return torch.matmul(x.to(self.weight.dtype), self.weight)
 
 
-class LsReftIntervention(
-    SourcelessIntervention, TrainableIntervention, DistributedRepresentationIntervention
-):
-    """
-    Fully Pyvene-compatible version.
-    ReFT-R1 (LsReFT). Computes \psi(h) = ReLU(Wh) for concept detection
-    and \Phi{h} = h + (1/k)*W||TopK{\psi(h)}||_1
-    """
-
-    def __init__(self, hidden_dim, top_k, **kwargs):
-        super().__init__(**kwargs, keep_last_dim=True)
-        self.hidden_dim = hidden_dim
-        self.top_k = top_k
-        self.weight = torch.nn.Linear(hidden_dim, 1)
-        self.act_fn = nn.ReLU()
-
-    def forward(self, base, source, subspaces=None):
-        detect_latent = self.act_fn(self.weight(base))
-        _, top_k_values = torch.topk(detect_latent, self.top_k, dim=-1)
-        norm_values = top_k_values.norm(p=1, dim=-1).unsqueeze(-1)
-        source = self.weight.weight.T * norm_values
-        intervened_latent = _do_intervention_by_swap(
-            base,
-            source,
-            "add",
-            self.interchange_dim,
-            subspaces,
-            subspace_partition=self.subspace_partition,
-            use_fast=self.use_fast,
-        )
-        return intervened_latent
-
-
 class BatchLsReftIntervention(nn.Module):
     """
     ReFT-R1 (LsReFT). Computes \psi(h) = ReLU(Wh) for concept detection
@@ -328,32 +295,56 @@ class BatchLsReftIntervention(nn.Module):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.top_k = top_k
-        self.act_fn = nn.ReLU()
 
     def forward(
-        self, base, intervention_positions, batch_weights
+        self,
+        base,
+        intervention_positions,
+        batch_weights,
+        factors=None,
+        max_acts=None,
+        steering=False,
     ) -> InterventionModuleOutput:
         """
-        Performed batched-LsReFT intervention and concept detection.
+        Performed batched-LsReFT intervention during training.
         base: [B, S, H]
         intervention_positions: [B, P]
-        batch_weights: [B, P, H]
+        batch_weights: [B, 1, H]
+        factor: [B] is a fixed scaling for inference time steering
+        steering: whether or not we use training or inference time intervention
         """
-        batch_size = base.shape[0]
-        batch_indices = torch.arange(batch_size, device=base.device).unsqueeze(-1)
+        assert intervention_positions.shape[1] == base.shape[1], (
+            "only sequence-level interventions supported for now"
+        )
+        bsz = base.shape[0]
+        batch_indices = torch.arange(bsz, device=base.device).unsqueeze(-1)
         # (B, P, H)
         intervention_states = base[batch_indices, intervention_positions]
-        # (B, P, H) dot product
-        detect_latent = self.act_fn(intervention_states * batch_weights)
-        # (B, P, K)
-        topk_values = detect_latent.topk(self.top_k, dim=-1)[0]
-        # (B, P, H-K)
-        non_topk_latents = detect_latent.topk(
-            self.hidden_dim - self.top_k, dim=-1, largest=False
-        )[0]
-        # (B, P, 1)
-        norm_values = topk_values.norm(p=1, dim=(1, 2), keepdim=True) / self.top_k
-        batch_steering_vec = norm_values * batch_weights
+
+        if steering:
+            # We are in steering mode, so we just need to apply the steering vec
+            batch_steering_vec = (
+                max_acts[:, None, None] * factors[:, None, None] * batch_weights
+            )
+            extra_outputs = {}
+        else:
+            # (B, P, H) * (B, H, 1)
+            detect_latent = torch.relu(
+                torch.bmm(intervention_states, batch_weights.transpose(1, 2))
+            ).squeeze(-1)
+            # (B, K) Sequence level topk
+            topk_values, topk_indices = detect_latent.topk(self.top_k, dim=-1)
+            non_topk_latents = detect_latent.clone()
+            non_topk_latents.scatter_(-1, topk_indices, 0)
+            # (B, 1) * (B, 1, H)
+            batch_steering_vec = (
+                topk_values.mean(dim=-1, keepdim=True).unsqueeze(-1) * batch_weights
+            )
+
+            extra_outputs = {
+                "detect_latent": detect_latent,
+                "non_topk_latents": non_topk_latents,
+            }
 
         # Additive intervention
         intervened_output = base.clone()
@@ -363,10 +354,7 @@ class BatchLsReftIntervention(nn.Module):
             mixed_output=intervened_output.to(base.dtype),
             base=base,
             metrics={},
-            extra_outputs={
-                "detect_latent": detect_latent,
-                "non_topk_latents": non_topk_latents,
-            },
+            extra_outputs=extra_outputs,
         )
 
 
@@ -475,6 +463,7 @@ class BatchLoreftIntervention(nn.Module):
         intervention_positions=None,
         batch_rotation=None,
         batch_weights=None,
+        **kwargs,
     ) -> InterventionModuleOutput:
         metrics = {}
 

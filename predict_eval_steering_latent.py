@@ -13,7 +13,6 @@ from typing import Dict, List
 import einops
 import httpx
 import hydra
-from hypothesis import target
 import pandas as pd
 import torch
 import torch.distributed as dist
@@ -100,6 +99,26 @@ def get_cache_key(config, concept_ids, metadata):
     ).hexdigest()
 
 
+def pre_compute_mean_activations(model_name, dump_dir, **kwargs):
+    dump_dir = Path(dump_dir) / "inference"
+
+    if not os.path.exists(dump_dir):
+        raise ValueError("Run latent inference first before steering.")
+
+    max_activations = {}  # sae_id to max_activation
+    # Loop over saved latent files in dump_dir.
+    for file in os.listdir(dump_dir):
+        if file.startswith("latent_") and file.endswith(".parquet"):
+            latent_path = os.path.join(dump_dir, file)
+            latent = pd.read_parquet(latent_path)
+            # loop through unique sorted concept_id
+            for concept_id in sorted(latent["concept_id"].unique()):
+                concept_latent = latent[latent["concept_id"] == concept_id]
+                max_act = concept_latent[f"{model_name}_max_act"].max()
+                max_activations[concept_id] = max_act if max_act > 0 else 50
+    return max_activations
+
+
 @torch.no_grad()
 def predict_steering(
     model,
@@ -115,6 +134,7 @@ def predict_steering(
     do_sample: bool = True,
     intervention_positions: str = None,
     intervention_layers: List[int] = None,
+    max_acts_map: Dict[int, float] = None,
     **kwargs,
 ) -> Dict[str, float]:
     """
@@ -134,6 +154,7 @@ def predict_steering(
         steering_prompt: Optional prompt to guide the steering (only used in steering mode)
         intervention_positions: Intervention positions
         intervention_layers: Intervention layers
+        max_acts_map: max activations for each concept
     """
     all_generations = []
     all_perplexities = []
@@ -164,6 +185,11 @@ def predict_steering(
         # Move batch to GPU
         batch = {k: v.to(device) for k, v in batch.items()}
 
+        max_acts = torch.tensor(
+            [max_acts_map.get(id, 1.0) for id in raw_batch["concept_id"].tolist()]
+        ).to(device)
+        factors = torch.tensor(raw_batch["factor"].tolist()).to(device)
+
         # Generate outputs based on mode
         if mode == AxbenchMode.EVAL_STEERING:
             outputs = model.generate(
@@ -181,6 +207,8 @@ def predict_steering(
                 do_sample=do_sample,
                 temperature=temperature,
                 do_intervention=True,
+                max_acts=max_acts,
+                factors=factors,
             )
         elif mode == AxbenchMode.PROMPT_STEERING:
             outputs = model.generate(
@@ -518,7 +546,8 @@ def infer_steering(config, rank, world_size, device, logger):
 
         # Cache the results
         if all_dfs:
-            pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
+            cached_df = pd.concat(all_dfs, ignore_index=True)
+            cached_df.to_parquet(cache_file)
             logger.info(f"Cached steering data to {cache_file}")
 
     axbench_mode_map = {
@@ -533,6 +562,8 @@ def infer_steering(config, rank, world_size, device, logger):
     # Process all concepts in batches across concept boundaries
     for model_name in config.axbench.inference.models:
         logger.info(f"Running prediction for {model_name} mode")
+
+        max_acts_map = pre_compute_mean_activations(model_name, dump_dir)
 
         # Run prediction on all data at once
         results = predict_steering(
@@ -549,6 +580,7 @@ def infer_steering(config, rank, world_size, device, logger):
             prefix_length=prefix_length,
             intervention_positions=config.model.intervention_positions,
             intervention_layers=config.model.intervention_layer,
+            max_acts_map=max_acts_map,
         )
 
         # Store the results in cached_df
@@ -643,7 +675,7 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
             0,
             1,
             device,
-            get_logger("inference"),
+            get_logger("infer_steering"),
         )
     elif cfg.axbench.type == "latent":
         infer_latent(
@@ -651,26 +683,28 @@ def run_inference(cfg: DictConfig, device: str | torch.DeviceObjType = "cuda"):
             0,
             1,
             device,
-            get_logger("inference"),
+            get_logger("infer_latent"),
             cfg.axbench.train,
             cfg.axbench.generate,
         )
     elif cfg.axbench.type == "all":
-        infer_steering(
-            cfg,
-            0,
-            1,
-            device,
-            get_logger("inference"),
-        )
+        # NOTE: latent inference must be run first before steering
+        # to compute max acts
         infer_latent(
             cfg,
             0,
             1,
             device,
-            get_logger("inference"),
+            get_logger("infer_latent"),
             cfg.axbench.train,
             cfg.axbench.generate,
+        )
+        infer_steering(
+            cfg,
+            0,
+            1,
+            device,
+            get_logger("infer_steering"),
         )
 
 
@@ -827,7 +861,7 @@ def infer_latent(
 
         # Cache the results
         if all_dfs:
-            pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
+            cached_df = pd.concat(all_dfs, ignore_index=True).to_parquet(cache_file)
             logger.info(f"Cached latent data to {cache_file}")
 
     # Process all concepts in one go
@@ -856,7 +890,7 @@ def infer_latent(
             else:
                 cached_df.loc[:, f"{model_name}_{k}"] = v
 
-    save(dump_dir, "latent", current_df, rank)
+    save(dump_dir, "latent", cached_df, rank)
     logger.warning(
         f"Saved inference results for concept {concept_id} to rank_{rank}_latent_data.parquet"
     )

@@ -698,10 +698,11 @@ class LlamaInterpretorForSteering(nn.Module):
         self._temp_global_cache["prompt_lengths"] = [
             len(x) for x in kwargs["target_input_ids"]
         ]
+        _excludes = ["max_acts", "factor", "weights"]
         # prune kwargs for generation
         target_kwargs = {}
         for kw in kwargs.keys():
-            if "weights" not in kw:
+            if not any(exclude in kw for exclude in _excludes):
                 if kw.startswith("target_"):
                     target_kwargs[kw.replace("target_", "")] = kwargs[kw]
                 elif all(
@@ -736,6 +737,9 @@ class LlamaInterpretorForSteering(nn.Module):
                 modified_states = self._apply_intervention(
                     hidden_states,
                     intervention_positions=kwargs.get("intervention_positions"),
+                    steering=True,
+                    factors=kwargs.get("factors"),
+                    max_acts=kwargs.get("max_acts"),
                 )
                 # Manually handle cache clearing
                 self._temp_global_cache.clear()
@@ -755,7 +759,6 @@ class LlamaInterpretorForSteering(nn.Module):
                 else self.config.intervention_layer
             )
             if layer_idx in intervention_layers:
-                breakpoint()
                 # NOTE: important to allow kwargs else we can't check if in generation mode all kwargs ignored!
                 current_layer_rel_idx = intervention_layers.index(layer_idx)
                 # Use rel idx because of cache positioning
@@ -777,6 +780,9 @@ class LlamaInterpretorForSteering(nn.Module):
         self,
         hidden_states,
         intervention_positions,
+        steering=False,
+        factors=None,
+        max_acts=None,
         metrics=None,
     ):
         """Common intervention logic used by both forward and generation"""
@@ -797,19 +803,24 @@ class LlamaInterpretorForSteering(nn.Module):
             :, current_layer_rel_idx
         ]
 
-        # Apply intervention, assuming LoReFT impl
+        # LoReFT or interchange based method
         if rotation_matrix is not None:
             intervention_output = self.intervention_module(
                 hidden_states,
                 intervention_positions=intervention_positions,
                 batch_rotation=rotation_matrix,
                 batch_weights=weight_matrix,
+                steering=steering,
             )
+        # assume this is a standard steering vec method
         else:
             intervention_output = self.intervention_module(
                 hidden_states,
                 intervention_positions=intervention_positions,
                 batch_weights=weight_matrix,
+                steering=steering,
+                factors=factors,
+                max_acts=max_acts,
             )
 
         return intervention_output
@@ -1002,19 +1013,24 @@ class LlamaInterpretorForSteering(nn.Module):
                 nonlocal extra_outputs
 
                 self._temp_global_cache["current_layer_rel_idx"] = current_layer_rel_idx
-                output = self._apply_intervention(
+                intervened_output = self._apply_intervention(
                     output[0], intervention_positions=intervention_positions
                 )
 
                 if return_base_states:
-                    self._temp_global_cache["gathered_base_states"] += (output.base,)
+                    self._temp_global_cache["gathered_base_states"] += (
+                        intervened_output.base,
+                    )
                 if return_intervened_states:
                     self._temp_global_cache["gathered_intervened_states"] += (
-                        output.mixed_output,
+                        intervened_output.mixed_output,
                     )
 
-                metrics, extra_outputs = output.metrics, output.extra_outputs
-                output[0] = output.mixed_output
+                metrics, extra_outputs = (
+                    intervened_output.metrics,
+                    intervened_output.extra_outputs,
+                )
+                return (intervened_output.mixed_output,) + output[1:]
 
             # Now editing the target model
             if intervention_layers is None:
