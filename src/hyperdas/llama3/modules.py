@@ -693,13 +693,12 @@ class LlamaInterpretorForSteering(nn.Module):
 
     def generate(self, *args, **kwargs) -> ModelOutput | torch.LongTensor:
         _do_intervention = kwargs.pop("do_intervention", True)
-        _intervene_during_generation = kwargs.pop("intervene_during_generation", True)
 
         # Prompt length is used later to determine if we are in generation mode
         self._temp_global_cache["prompt_lengths"] = [
             len(x) for x in kwargs["target_input_ids"]
         ]
-        _excludes = ["max_acts", "factor", "weights"]
+        _excludes = ["max_acts", "factor", "weights", "intervene_during_generation"]
         # prune kwargs for generation
         target_kwargs = {}
         for kw in kwargs.keys():
@@ -1080,17 +1079,16 @@ class LlamaInterpretorForSteering(nn.Module):
             output.metrics = metrics
             output.extra_outputs = {}
 
-            if (
-                self.config.reft_hypernetwork == "LsReFT"
-                and "sft" in self.config.objective
-            ):
+            if self.config.reft_hypernetwork == "LsReFT" and extra_outputs:
                 output.extra_outputs["non_topk_latents"] = extra_outputs[
                     "non_topk_latents"
                 ]
+                output.extra_outputs["detect_latent"] = extra_outputs["detect_latent"]
 
-            if "reconstruction" in self.config.objective:
+            if self.steering_hypernetwork is not None:
                 output.extra_outputs["weight_matrix"] = weight_matrix
-            else:
+
+            if target_input_ids is not None:
                 output.target_hidden_states = target_result.hidden_states
 
             if return_base_states:

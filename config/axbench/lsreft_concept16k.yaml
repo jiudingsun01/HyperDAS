@@ -56,7 +56,7 @@ inference:
   seed: 42
   lm_model: "gpt-4o-mini"
   # generation related params
-  temperature: 1.0
+  temperature: 1.0e-5
 evaluate:
   models: ["LsReFT", "PromptSteering"]
   latent_evaluators: ["AUCROCEvaluator", "HardNegativeEvaluator"]

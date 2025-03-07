@@ -361,6 +361,7 @@ def tokenize_text_inputs(
                 or ipt.endswith('"')
                 or ipt.endswith("'")
                 or ipt.endswith("(")
+                or not targ  # so we don't end up with empty space
             ):
                 input_texts.append(ipt + targ)
             else:

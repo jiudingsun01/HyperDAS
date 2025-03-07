@@ -211,6 +211,7 @@ def predict_steering(
                 do_intervention=True,
                 max_acts=max_acts,
                 factors=factors,
+                intervene_during_generation=intervene_during_generation,
             )
         elif mode == AxbenchMode.PROMPT_STEERING:
             outputs = model.generate(
@@ -232,16 +233,22 @@ def predict_steering(
             for output, length in zip(outputs, input_lengths)
         ]
 
-        # Print generations alongside inputs and concepts
-        for gen, batch_input, concept in zip(
-            generations, raw_batch["input"], raw_batch["input_concept"]
-        ):
-            print(f"\nGENERATION: {gen}")
-            print(f"INPUT: {batch_input}")
-            print(f"CONCEPT: {concept}")
-            print("-" * 80)
-
+        # Print the non-masked portion of each target input
+        for i, (input_ids, attention_mask) in enumerate(zip(batch["target_input_ids"], batch["target_attention_mask"])):
+            print(f"\nInput {i}:")
+            print(input_ids[attention_mask.bool()]) # Print raw token ids
+            print("Decoded input:")
+            print(target_model_tokenizer.decode(input_ids[attention_mask.bool()], skip_special_tokens=True))
+            print("-" * 40)
         breakpoint()
+        # Print generations alongside inputs and concepts
+        # for gen, batch_input, concept in zip(
+        #     generations, raw_batch["input"], raw_batch["input_concept"]
+        # ):
+        #     print(f"\nGENERATION: {gen}")
+        #     print(f"INPUT: {batch_input}")
+        #     print(f"CONCEPT: {concept}")
+        #     print("-" * 80)
 
         # Calculate perplexity
         gen_ids = target_model_tokenizer(
@@ -338,20 +345,9 @@ def predict_latent(
             return_intervened_states=True,
         )
 
-        # Extract activations (B, S, H)
-        gathered_intervened_acts = outputs.gathered_intervened_states[0]
-        # Get weights for detection scores (B, 1, H)
-        weights = outputs.extra_outputs["weight_matrix"][:, 0, :, :]
-        # Compute detection scores
-        detection_scores = einops.einsum(
-            gathered_intervened_acts,
-            weights,
-            "b s h, b j h -> b s j",
-        )
-
         # Process each sequence in the batch
         attn_mask = batch["target_attention_mask"]
-        for seq_idx, act in enumerate(detection_scores):
+        for seq_idx, act in enumerate(outputs.extra_outputs["detect_latent"]):
             # Get valid token positions
             valid_positions = attn_mask[seq_idx] > 0
 

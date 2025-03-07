@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from typing import Tuple
 
+import einops
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -323,19 +324,25 @@ class BatchLsReftIntervention(nn.Module):
 
         if steering:
             # We are in steering mode, so we just need to apply the steering vec
-            print(
-                "SCALE",
-                (20 * max_acts[:, None, None] * factors[:, None, None]).mean().item(),
-            )
+            if base.shape[1] > 1:
+                print("=" * 50)
+                print("BATCH WEIGHT NORM", batch_weights.norm(dim=-1))
+                print("EFF MAG", max_acts[:, None, None] * factors[:, None, None])
+                print("BASE NORM", base.shape, base.norm(dim=(1, 2)))
+                print("=" * 50)
             batch_steering_vec = (
-                20 * max_acts[:, None, None] * factors[:, None, None] * batch_weights
+                max_acts[:, None, None] * factors[:, None, None] * batch_weights
             )
             extra_outputs = {}
         else:
             # (B, P, H) * (B, H, 1)
             detect_latent = torch.relu(
-                torch.bmm(intervention_states, batch_weights.transpose(1, 2))
-            ).squeeze(-1)
+                einops.einsum(
+                    intervention_states,
+                    batch_weights,
+                    "b p h, b j h -> b p j",
+                )
+            ).squeeze()
             # (B, K) Sequence level topk
             topk_values, topk_indices = detect_latent.topk(self.top_k, dim=-1)
             non_topk_latents = detect_latent.clone()
