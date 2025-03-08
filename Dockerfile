@@ -29,5 +29,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Run install script if exists
 RUN if [ -f /usr/local/bin/install.sh ]; then bash /usr/local/bin/install.sh; fi
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/ssh-agent", "/usr/local/bin/entrypoint.sh"]
 CMD ["zsh"]
