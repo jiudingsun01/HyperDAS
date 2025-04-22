@@ -4,7 +4,8 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.12+-red.svg)](https://pytorch.org/)
 
-Official implementation of "HyperDAS: Towards Automating Mechanistic Interpretability with Hypernetworks" (ICLR 2025).
+Official implementation of "[HyperDAS: Towards Automating Mechanistic Interpretability with Hypernetworks](https://arxiv.org/pdf/2503.10894)" (ICLR 2025).
+
 
 ## Abstract
 
