@@ -17,7 +17,7 @@ Mechanistic interpretability has made great strides in identifying neural networ
   <img src="assets/hyperdas_framework.png" width="800px">
 </p>
 
-The HyperDAS framework, used here to find the features that mediate the concept of "country":
+The HyperDAS is a highly modulized framework, used here to search for the features in LLMs that mediate the concept of "country" automatically:
 
 1. **Concept Encoding**: A natural language description that specifies which concept to localize, "The country of a city", is encoded by a transformer hypernetwork with two additional cross-attention blocks attending to the hidden states of the target LM prompted with the base text "Vienna is in" and the counterfactual text "I love Paris".
 
@@ -113,15 +113,6 @@ python train.py --domain all --layer 15 --feature_dim 128 --epochs 5
 python evaluate.py --model_path checkpoints/hyperdas_city_l15.pt --domain city
 ```
 
-## Results
-
-HyperDAS achieves state-of-the-art performance on RAVEL:
-
-| Method | City | Nobel Laureate | Occupation | Physical Object | Verb | Average |
-|--------|------|----------------|------------|-----------------|------|---------|
-| MDAS | 66.9 | 74.8 | 69.4 | 91.5 | 77.0 | 76.0 |
-| HyperDAS | 82.4 | 75.3 | 74.8 | 95.0 | 96.0 | 84.7 |
-
 ## Citation
 
 ```bibtex
@@ -136,7 +127,3 @@ HyperDAS achieves state-of-the-art performance on RAVEL:
 ## License
 
 MIT
-
-## Acknowledgements
-
-This research was in part supported by a grant from Open Philanthropy.
