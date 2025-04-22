@@ -57,9 +57,9 @@ def run_experiment(
         test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
 
-    from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+    from src.hyperdas.llama3.model import RavelInterpreterHypernetwork
 
-    hypernetwork = RavelInterpretorHypernetwork(
+    hypernetwork = RavelInterpreterHypernetwork(
         model_name_or_path=model_name_or_path,
         num_editing_heads=32,
         intervention_layer=intervention_layer,

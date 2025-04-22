@@ -382,7 +382,7 @@ class LlamaDecoderLayerWithCrossAttention(LlamaDecoderLayer):
         return outputs
     
     
-class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
+class InterpreterUnembedCrossAttention(LlamaAttentionWithCrossAttention):
     _flash_attn_enabled = False
     
     def __init__(self, config, layer_idx=None):

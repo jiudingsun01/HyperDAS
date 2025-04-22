@@ -1,6 +1,6 @@
 import torch
-from.modules import LlamaInterpretorConfig, LlamaInterpretor
-from ..utils import InterpretorModelOutput
+from.modules import LlamaInterpreterConfig, LlamaInterpreter
+from ..utils import InterpreterModelOutput
 from transformers import AutoTokenizer
 import torch.nn as nn
 import torch.optim as optim
@@ -14,7 +14,7 @@ import json
 import numpy as np
 
 
-class RavelInterpretorHypernetwork(nn.Module):
+class RavelInterpreterHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
         self,
@@ -32,20 +32,20 @@ class RavelInterpretorHypernetwork(nn.Module):
     ):
         super().__init__()
 
-        self.interpretor_config = LlamaInterpretorConfig.from_pretrained(model_name_or_path)
-        self.interpretor_config.name_or_path = model_name_or_path
-        self.interpretor_config.torch_dtype = torch_dtype
-        self.interpretor_config.num_editing_heads = num_editing_heads
-        self.interpretor_config.chop_editor_at_layer = chop_editor_at_layer
-        self.interpretor_config.intervention_layer = intervention_layer
-        self.interpretor_config._attn_implementation = 'eager'
-        self.interpretor_config.initialize_from_scratch = initialize_from_scratch
-        self.interpretor_config.ablate_base_token_attention = ablate_base_token_attention
-        self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
-        self.interpretor_config.break_asymmetric = break_asymmetric
+        self.interpreter_config = LlamaInterpreterConfig.from_pretrained(model_name_or_path)
+        self.interpreter_config.name_or_path = model_name_or_path
+        self.interpreter_config.torch_dtype = torch_dtype
+        self.interpreter_config.num_editing_heads = num_editing_heads
+        self.interpreter_config.chop_editor_at_layer = chop_editor_at_layer
+        self.interpreter_config.intervention_layer = intervention_layer
+        self.interpreter_config._attn_implementation = 'eager'
+        self.interpreter_config.initialize_from_scratch = initialize_from_scratch
+        self.interpreter_config.ablate_base_token_attention = ablate_base_token_attention
+        self.interpreter_config.ablate_source_token_attention = ablate_source_token_attention
+        self.interpreter_config.break_asymmetric = break_asymmetric
         
-        self.interpretor = LlamaInterpretor(
-            self.interpretor_config, 
+        self.interpreter = LlamaInterpreter(
+            self.interpreter_config, 
             subspace_module=subspace_module, 
             das_dimension=das_dimension,
         )
@@ -71,17 +71,17 @@ class RavelInterpretorHypernetwork(nn.Module):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
             
-        torch.save(self.interpretor.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
+        torch.save(self.interpreter.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
         if self.use_das_intervention:
-            torch.save(self.interpretor.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
+            torch.save(self.interpreter.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
         
     def load_model(self, load_dir):
-        self.interpretor.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
+        self.interpreter.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
         if self.use_das_intervention:
-            self.interpretor.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
+            self.interpreter.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
             
     def set_intervention_layer(self, intervention_layer):
-        self.interpretor.config.intervention_layer = intervention_layer
+        self.interpreter.config.intervention_layer = intervention_layer
         
     def forward(
         self,
@@ -100,9 +100,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         intervention_weight: torch.Tensor = None,
         inference_mode = None,
     ):
-        _pred: InterpretorModelOutput = self.interpretor(
+        _pred: InterpreterModelOutput = self.interpreter(
             editor_input_ids=editor_input_ids,
-            editor_attention_mask=editor_input_ids != self.interpretor_config.eos_token_id,
+            editor_attention_mask=editor_input_ids != self.tokenizer.eos_token_id,
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
@@ -163,7 +163,7 @@ class RavelInterpretorHypernetwork(nn.Module):
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
     def inspect_batch_prediction_ouptuts(self, batch, inference_mode=None, eval_n_label_tokens=None):
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
-        self.interpretor.eval()
+        self.interpreter.eval()
         
         correct_idxs = []
         
@@ -396,7 +396,7 @@ class RavelInterpretorHypernetwork(nn.Module):
     def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
         
-        self.interpretor.eval()
+        self.interpreter.eval()
         test_loss = []
         correct_idxs = []
         is_causal = []
@@ -512,8 +512,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         if self.use_das_intervention:
             das_temperature_schedule = torch.linspace(
                 self.das_temperature_start, self.das_temperature_end, total_steps + 1
-            ).to(self.interpretor_config.torch_dtype).to("cuda")
-            self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
+            ).to(self.interpreter_config.torch_dtype).to("cuda")
+            self.interpreter.das_module.set_temperature(das_temperature_schedule[cur_steps])
             
         # Create a scheduler for the sparsity loss that is very small at the beginning from sparsity_loss_weight_start and increases to the sparsity_loss_weight_end
         # over the course of the training. Before sparsity_loss_warm_up_ratio * total_steps steps, the sparsity loss is not applied.
@@ -521,7 +521,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             warm_up_steps = int(sparsity_loss_warm_up_ratio * total_steps)
             sparsity_loss_schedule = torch.linspace(
                 sparsity_loss_weight_start, sparsity_loss_weight_end, total_steps + 1
-            ).to(self.interpretor_config.torch_dtype).to("cuda")
+            ).to(self.interpreter_config.torch_dtype).to("cuda")
             sparsity_loss_schedule[:warm_up_steps] = 0.0
 
         for epoch in range(epochs):
@@ -621,7 +621,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     
                     # TEST: orthogonalize the rotation matrix every step
                     """if self.use_das_intervention:
-                        self.interpretor.das_module.orthogonalize_rotation_matrix()"""
+                        self.Interpreter.das_module.orthogonalize_rotation_matrix()"""
 
                     metrics = {
                         "step": cur_steps,
@@ -630,7 +630,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     }
                     
                     if self.use_das_intervention:
-                        metrics["das_sparsity"] = self.interpretor.das_module.get_boundary_sparsity().item()
+                        metrics["das_sparsity"] = self.interpreter.das_module.get_boundary_sparsity().item()
 
                     if wandb.run:
                         wandb.log(metrics)
@@ -645,7 +645,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
                     if self.use_das_intervention:
-                        self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
+                        self.interpreter.das_module.set_temperature(das_temperature_schedule[cur_steps])
                     
                 if wandb.run:
                     wandb.log(

@@ -62,7 +62,7 @@ class EditorModelOutput(BaseModelOutput):
     
 
 @dataclass
-class InterpretorModelOutput(BaseModelOutput):
+class InterpreterModelOutput(BaseModelOutput):
     logits: Optional[torch.Tensor] = None
     target_hidden_states: Optional[torch.Tensor] = None
     edited_hidden_states: Optional[torch.Tensor] = None

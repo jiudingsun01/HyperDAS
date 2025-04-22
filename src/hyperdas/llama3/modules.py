@@ -18,11 +18,11 @@ from transformers.cache_utils import StaticCache, DynamicCache, Cache
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
 from ..utils import (
-    InterpretorModelOutput,
+    InterpreterModelOutput,
     add_fwd_hooks,
     assign_layer_indices,
 )
-from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
+from .layers import InterpreterUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
 from ..das_utils import BoundlessRotatedSpaceIntervention, RotatedSpaceIntervention, LowRankRotatedSpaceIntervention, SelectiveLowRankRotatedSpaceIntervention,ReflectiveLowRankRotatedSpaceIntervention
 
 from tqdm import tqdm
@@ -32,10 +32,10 @@ import seaborn as sns
 import time
 
 
-T = TypeVar("T", bound="LlamaInterpretor")
+T = TypeVar("T", bound="LlamaInterpreter")
 
 
-class LlamaInterpretorConfig(LlamaConfig):
+class LlamaInterpreterConfig(LlamaConfig):
     boundless_das: bool = False
     torch_dtype = torch.bfloat16
     chop_editor_at_layer: int = -1
@@ -222,16 +222,16 @@ class LlamaModelWithCrossAttention(LlamaModel):
         )
 
 
-class LlamaInterpretorHypernetwork(LlamaForCausalLM):
+class LlamaInterpreterHypernetwork(LlamaForCausalLM):
     _tied_weights_keys = []
 
-    def __init__(self, config: LlamaInterpretorConfig):
+    def __init__(self, config: LlamaInterpreterConfig):
         super().__init__(config)
         self.model = LlamaModelWithCrossAttention.from_pretrained(
             config.name_or_path, torch_dtype = config.torch_dtype
         )
         
-        self.lm_head = InterpretorUnembedCrossAttention(
+        self.lm_head = InterpreterUnembedCrossAttention(
             config=config, layer_idx=config.chop_editor_at_layer
         ).to(dtype=config.torch_dtype)
         
@@ -385,12 +385,12 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         return hidden_states, attn_weight
 
 
-class LlamaInterpretor(nn.Module):
-    def __init__(self, config: LlamaInterpretorConfig, subspace_module=None, das_dimension=None):
+class LlamaInterpreter(nn.Module):
+    def __init__(self, config: LlamaInterpreterConfig, subspace_module=None, das_dimension=None):
         super().__init__()
 
         self.config = config
-        self.hypernetwork = LlamaInterpretorHypernetwork(config)
+        self.hypernetwork = LlamaInterpreterHypernetwork(config)
         self.target_model = AutoModelForCausalLM.from_pretrained(
             config.name_or_path, torch_dtype = config.torch_dtype
         )
@@ -497,7 +497,7 @@ class LlamaInterpretor(nn.Module):
         output_intervention_weight: bool = True,
         intervention_weight: torch.Tensor = None,
         inference_mode: str = None,
-    ) -> InterpretorModelOutput:
+    ) -> InterpreterModelOutput:
         
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
         
@@ -579,7 +579,7 @@ class LlamaInterpretor(nn.Module):
                 source_intervention_mask.shape[1] * n_layer,
             )
 
-            interpretor_output = self.hypernetwork(
+            interpreter_output = self.hypernetwork(
                 input_ids=editor_input_ids,
                 attention_mask=editor_attention_mask,
                 base_hidden_states=collapsed_base_hidden_states,
@@ -590,11 +590,11 @@ class LlamaInterpretor(nn.Module):
             )
             
             if inference_mode == "groundtruth":
-                hypernet_hidden_states, _ = interpretor_output
+                hypernet_hidden_states, _ = interpreter_output
                 intervention_weight = intervention_weight.to(dtype=hypernet_hidden_states.dtype)
             else:
                 # Multiply the outputs by normalization factors
-                hypernet_hidden_states, intervention_weight = interpretor_output
+                hypernet_hidden_states, intervention_weight = interpreter_output
                 intervention_weight = intervention_weight.squeeze()
             
         if inference_mode == "global_argmax":
@@ -697,7 +697,7 @@ class LlamaInterpretor(nn.Module):
     
         logits = target_result.logits
         
-        output = InterpretorModelOutput(logits=logits)
+        output = InterpreterModelOutput(logits=logits)
         if output_edited_hidden_states:
             output.edited_hidden_states = target_result.hidden_states
             

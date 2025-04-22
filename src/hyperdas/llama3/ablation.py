@@ -1,6 +1,6 @@
 import torch
-from.modules import LlamaInterpretorConfig
-from ..utils import InterpretorModelOutput
+from.modules import LlamaInterpreterConfig
+from ..utils import InterpreterModelOutput
 from transformers import AutoTokenizer
 import torch.nn as nn
 import torch.optim as optim
@@ -13,19 +13,19 @@ import time
 from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union
 import json
 
-from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
+from .layers import InterpreterUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
 from ..das_utils import BoundlessRotatedSpaceIntervention, RotatedSpaceIntervention, LowRankRotatedSpaceIntervention, SelectiveLowRankRotatedSpaceIntervention,ReflectiveLowRankRotatedSpaceIntervention
 
 
 from ..utils import (
-    InterpretorModelOutput,
+    InterpreterModelOutput,
     add_fwd_hooks,
     assign_layer_indices,
 )
 
 from transformers import AutoModelForCausalLM
 
-T = TypeVar("T", bound="LlamaAblatedInterpretor")
+T = TypeVar("T", bound="LlamaAblatedInterpreter")
 
 
 
@@ -235,7 +235,7 @@ def get_ravel_dictionary_collate_fn(
 
 
 
-class RavelAblatedInterpretorHypernetwork(nn.Module):
+class RavelAblatedInterpreterHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
         self,
@@ -249,15 +249,15 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
     ):
         super().__init__()
 
-        self.interpretor_config = LlamaInterpretorConfig.from_pretrained(model_name_or_path)
-        self.interpretor_config.name_or_path = model_name_or_path
-        self.interpretor_config.torch_dtype = torch_dtype
-        self.interpretor_config.num_editing_heads = num_editing_heads
-        self.interpretor_config.intervention_layer = intervention_layer
-        self.interpretor_config._attn_implementation = 'eager'
+        self.interpreter_config = LlamaInterpreterConfig.from_pretrained(model_name_or_path)
+        self.interpreter_config.name_or_path = model_name_or_path
+        self.interpreter_config.torch_dtype = torch_dtype
+        self.interpreter_config.num_editing_heads = num_editing_heads
+        self.interpreter_config.intervention_layer = intervention_layer
+        self.interpreter_config._attn_implementation = 'eager'
                 
-        self.interpretor = LlamaAblatedInterpretor(
-            self.interpretor_config, 
+        self.interpreter = LlamaAblatedInterpreter(
+            self.interpreter_config, 
             subspace_module=subspace_module, 
             das_dimension=das_dimension,
             num_concept=num_concept,
@@ -281,14 +281,14 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
             
-        torch.save(self.interpretor.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
+        torch.save(self.interpreter.hypernetwork.state_dict(), os.path.join(save_dir, "hypernetwork.pt"))
         if self.use_das_intervention:
-            torch.save(self.interpretor.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
+            torch.save(self.interpreter.das_module.state_dict(), os.path.join(save_dir, "das.pt"))
         
     def load_model(self, load_dir):
-        self.interpretor.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
+        self.interpreter.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
         if self.use_das_intervention:
-            self.interpretor.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
+            self.interpreter.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
         
     def forward(
         self,
@@ -307,9 +307,9 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
         vector_ids: torch.Tensor = None,
         inference_mode = None,
     ):
-        _pred: InterpretorModelOutput = self.interpretor(
+        _pred: InterpreterModelOutput = self.interpreter(
             editor_input_ids=editor_input_ids,
-            editor_attention_mask=editor_input_ids != self.interpretor_config.eos_token_id,
+            editor_attention_mask=editor_input_ids != self.interpreter_config.eos_token_id,
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
@@ -369,7 +369,7 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
     def inspect_batch_prediction_ouptuts(self, batch, inference_mode=None, eval_n_label_tokens=None):
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
-        self.interpretor.eval()
+        self.interpreter.eval()
         
         correct_idxs = []
         
@@ -485,7 +485,7 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
     def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
         
-        self.interpretor.eval()
+        self.interpreter.eval()
         test_loss = []
         correct_idxs = []
         is_causal = []
@@ -596,8 +596,8 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
         if self.use_das_intervention:
             das_temperature_schedule = torch.linspace(
                 self.das_temperature_start, self.das_temperature_end, total_steps + 1
-            ).to(self.interpretor_config.torch_dtype).to("cuda")
-            self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
+            ).to(self.interpreter_config.torch_dtype).to("cuda")
+            self.interpreter.das_module.set_temperature(das_temperature_schedule[cur_steps])
 
         for epoch in range(epochs):
             # Create a tqdm progress bar
@@ -689,11 +689,11 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
                         self.parameters(), 4.0
                     )
                     
-                    before = self.interpretor.hypernetwork.weight[batch["vector_ids"].to("cuda")].clone()
+                    before = self.interpreter.hypernetwork.weight[batch["vector_ids"].to("cuda")].clone()
                     
                     self.opt.step()
                     
-                    after = self.interpretor.hypernetwork.weight[batch["vector_ids"].to("cuda")].clone()
+                    after = self.interpreter.hypernetwork.weight[batch["vector_ids"].to("cuda")].clone()
                     
                     # check if the weight has changed
                     if torch.allclose(before, after):
@@ -711,7 +711,7 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
                     }
                     
                     if self.use_das_intervention:
-                        metrics["das_sparsity"] = self.interpretor.das_module.get_boundary_sparsity().item()
+                        metrics["das_sparsity"] = self.interpreter.das_module.get_boundary_sparsity().item()
 
                     if wandb.run:
                         wandb.log(metrics)
@@ -723,7 +723,7 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
                     pbar.update(1)  # note: this was incorrectly displaying before!
                     cur_steps += 1
                     if self.use_das_intervention:
-                        self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
+                        self.interpreter.das_module.set_temperature(das_temperature_schedule[cur_steps])
                     
                 if wandb.run:
                     wandb.log(
@@ -756,8 +756,8 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
 
 
 
-class LlamaAblatedInterpretor(nn.Module):
-    def __init__(self, config: LlamaInterpretorConfig, num_concept, subspace_module=None, das_dimension=None):
+class LlamaAblatedInterpreter(nn.Module):
+    def __init__(self, config: LlamaInterpreterConfig, num_concept, subspace_module=None, das_dimension=None):
         super().__init__()
 
         self.config = config
@@ -767,7 +767,7 @@ class LlamaAblatedInterpretor(nn.Module):
         )
         
         self.hypernetwork = nn.Embedding(num_concept, self.target_model.config.hidden_size, dtype=config.torch_dtype)
-        self.unembedding_head = InterpretorUnembedCrossAttention(config, layer_idx=1).to(dtype=config.torch_dtype)
+        self.unembedding_head = InterpreterUnembedCrossAttention(config, layer_idx=1).to(dtype=config.torch_dtype)
         
         self.bidding_threshold = 0.1
         
@@ -872,7 +872,7 @@ class LlamaAblatedInterpretor(nn.Module):
         intervention_weight: torch.Tensor = None,
         inference_mode: str = None,
         vector_ids: torch.Tensor = None,
-    ) -> InterpretorModelOutput:
+    ) -> InterpreterModelOutput:
         
         assert inference_mode in [None, "column_argmax", "global_argmax", "groundtruth", "bidding_argmax"]
         
@@ -1061,7 +1061,7 @@ class LlamaAblatedInterpretor(nn.Module):
     
         logits = target_result.logits
         
-        output = InterpretorModelOutput(logits=logits)
+        output = InterpreterModelOutput(logits=logits)
         if output_edited_hidden_states:
             output.edited_hidden_states = target_result.hidden_states
             
